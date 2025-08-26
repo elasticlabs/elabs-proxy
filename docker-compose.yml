@@ -178,8 +178,10 @@ services:
 networks:
   revproxy_admin:
     name: revproxy_admin
+    external: true
   revproxy_apps:
     name: revproxy_apps
+    external: true
 
 volumes:
   portainer_data:
