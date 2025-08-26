@@ -1,14 +1,16 @@
 # HTTPS Secure reverse proxy
 
-An opinionated Secure Web Application Gateway (SWAG) &amp; Authelia HTTPS reverse application proxy for your dockerized software stacks! This stack implements the following building blocks : 
+An opinionated Secure Web Application Gateway (SWAG) &amp; HTTPS reverse application proxy for your dockerized software stacks! This stack implements the following building blocks : 
 
-- [Secure Web Application Gateway (SWAG)](https://www.linuxserver.io/blog/2020-08-21-introducing-swag) for Nginx best practice gateway + certbot + fail2ban + goaccess
-- [Authelia](https://www.authelia.com/integration/proxies/swag/) with built-in elegant 2FA for secure access to your apps
-- [Portainer CE](https://www.portainer.io/) for daily docker monitoring
-- [Homepage](https://github.com/benphelps/homepage/) for your deployments... well... Homepage :-)
+- [Secure Web Application Gateway (SWAG)](https://www.linuxserver.io/blog/2020-08-21-introducing-swag) for Nginx best practice gateway + certbot + fail2ban + goaccess.
+- [Authentik](https://https://goauthentik.io/) coupled with [oAuth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/), providing control of your identity needs with a secure, flexible solution.
+- [Portainer CE](https://www.portainer.io/) for daily docker stack monitoring.
+- [Homepage](https://gethomepage.dev/) provides an elegant portal access page for your deployed apps.
+- [OpenObserve](https://openobserve.ai/), an open source and low-profile observability platform.
+- [Restic](https://restic.net/), a modern backup program that can back up your files. 
 
 <p>
-  <img src="https://raw.githubusercontent.com/elasticlabs/elabs-https-nginx-proxy/main/.utils/Architecture.png" alt="Elastic Labs secure HTTPS proxy" height="400px">
+  <img src="https://raw.githubusercontent.com/elasticlabs/elabs-https-nginx-proxy/authentik/.utils/Architecture.png" alt="Elasticlabs secure HTTPS proxy" height="400px">
 </p>
 
 ## Table Of Contents
@@ -16,7 +18,6 @@ An opinionated Secure Web Application Gateway (SWAG) &amp; Authelia HTTPS revers
 - [HTTPS Secure reverse proxy](#https-secure-reverse-proxy)
   - [Table Of Contents](#table-of-contents)
   - [Preparation steps](#preparation-steps)
-    - [DNS configuration](#dns-configuration)
     - [Stack preparation](#stack-preparation)
   - [Stack initial deployment](#stack-initial-deployment)
   - [Post-Install configuration](#post-install-configuration)
@@ -28,39 +29,38 @@ An opinionated Secure Web Application Gateway (SWAG) &amp; Authelia HTTPS revers
 
 ## Preparation steps
 
-Please 1st ensure that you deployed a fresh docker + compose environment on your server. If not, please follow the [docker installation guide](https://docs.docker.com/engine/install/) and the [docker-compose installation guide](https://docs.docker.com/compose/install/). Dont forget to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to ensure your docker environment is properly configured. 
+Please 1st ensure that you deployed a fresh docker + compose environment on your server. If not, please follow the [docker installation guide](https://docs.docker.com/engine/install/) and the [docker-compose installation guide](https://docs.docker.com/compose/install/linux/#install-using-the-repository). 
 
-- Install utility tools: `# yum install git nano make htop wget tshark nano tree`
+- Install utility tools: `# yum install git make htop wget tree`
 - Carefully create / choose an appropriate directory to group your stacks GIT reposities (e.g. `~/AppContainers/`)
 - GIT clone this repository `git clone https://github.com/elasticlabs/https-nginx-proxy-docker-compose.git`
+- Ensure you registered a valid DNS domain mane
 
-### DNS configuration
-
-To successfully implement this solution, you'll need to ensure that the following DNS records are existing and properly pointing towards your server's IP address (replace `example.com` with your own domain name). Ensure those properly resolve from your server using `nslookup`commands
+To successfully implement this solution, you'll need to ensure that the following DNS records are existing and properly pointing towards your server's IP address (replace `example.com` with your own domain name). Ensure those properly resolve from your server using `nslookup`commands.
 
 | Tool | Record | description |
 |---|---|---|
 | Homepage | `example.com` | Your server homepage URL. Portainer will be accessed through `example.com/portainer` URL |
-| Authelia | `auth.example.com` | Your Authelia URL. Authelia API will be accessed through `auth.example.com/api` URL |
 | SWAG Dashboard | `dash.example.com` | Your SWAG Dashboard (GoAccess) URL |
+
 
 ### Stack preparation
 
-This stack is composed of 4 main services : SWAG, Authelia, Portainer and Homepage. Therefore, preparing the deployment has to follow a progressive order to complete successfully.
+This stack is composed of the following main services : SWAG, Authentik, Portainer and Homepage. 
 
 | Tool | Steps |
 |---|---|
-| Docker Compose | * Rename `.env-changeme` file into `.env` to ensure `docker compose` sets its environement correctly.<br>* Modify the following variables in `.env` file :<br>  * `VIRTUAL_HOST=` : replace `example.com` with your homepage domain name (usually ROOT domain).<br>  * `CERTBOT_EMAIL=` : used for let'sencrypt account.<br>  * `SUBDOMAINS`=auth,dash.<br>  * `AUTHELIA_SUBDOMAIN`=auth.example.com.<br>  * `TZ`=Europe/Paris by your timezone. |
-| SWAG | * Rename `.env_swag-variables-changeme` file into `.env_swag-variables` to ensure `docker compose` sets its environement correctly.<br>* Modify the following variables in `.env_swag-variables` file :<br>  * `TZ`=Europe/Paris by your timezone.<br>  * `MAXMINDDB_LICENSE_KEY=` : replace `<license-key>` with your [Maxmind licence key](https://www.maxmind.com/en/geolite2/signup) personal licence key.<br>  * `DOCKER_MODS=` : uncomment this line to use SWAG Dashboard + Maxmind GeoIP2 database. |
-| Authelia | * move `data/authelia/config/configuration.yml.changeme` to `data/authelia/config/configuration.yml.changeme` <br> Apart from the `AUTHELIA_SUBDOMAIN` variable in the `.env` file, it's not recommanded to setup and run Authelia immediately at this step. Please make the whole stack work before enabling security. When ready, please navigate to [Authelia](#authelia) |
-| Homepage | No need to change anything in the configuration of Homepage for now, the makefile gets you covered! | 
+| Docker Compose | * Rename `.env-changeme` file into `.env`.<br>* Modify the following variables in `.env` file :<br>  * `VIRTUAL_HOST=` : replace `example.com` with your homepage domain name (usually ROOT domain).<br>  * `CERTBOT_EMAIL=` : used for let'sencrypt account.<br>  * `SUBDOMAINS`=auth,dash.<br>  * `AUTHELIA_SUBDOMAIN`=auth.example.com.<br>  * `TZ`=Europe/Paris by your timezone. |
+| Authentik | * move TODO <br> |
+| Homepage | The provided makefile gets you covered! | 
 
 ## Stack initial deployment
 
 | ▲ [Top](#https-secure-reverse-proxy) |
 | --- |
 
-A lot of work has been done to make the deployment of this stack as easy as possible. The following section describes how to deploy the stack and how to use it. It is based on the `Makefile` and following operators :
+The following section describes how to deploy the stack and how to use it. 
+It is based on a `Makefile` file _via_ following operators :
 
 - Get help : `make`
 - `make up` : brings up the whole stack. `up` always triggers a `make build` before, so you don't have to worry about it.
@@ -71,7 +71,7 @@ If all runs well, you should check for services status, especially SWAG with the
 
 ```bash
 
-elabs-secure-proxy_swag-entrypoint  | Server ready
+TODO // elabs-secure-proxy_swag-entrypoint  | Server ready
 
 ```
 
