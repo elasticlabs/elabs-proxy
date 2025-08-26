@@ -13,6 +13,17 @@ An opinionated Secure Web Application Gateway (SWAG) &amp; HTTPS reverse applica
   <img src="https://raw.githubusercontent.com/elasticlabs/elabs-https-nginx-proxy/authentik/.utils/Architecture.png" alt="Elasticlabs secure HTTPS proxy" height="400px">
 </p>
 
+Assuming that `example.com` is your self-hosted domain name, the proxy applications will be accessible via : 
+
+- `https://example.com/portainer/`
+- `https://example.com/authentik/`
+- `https://example.com/code/`
+- `https://example.com/openobserve/`
+- `https://example.com/restic/`
+- `https://example.com/files/`
+
+Enjoy! 
+
 ## Table Of Contents
 
 - [HTTPS Secure reverse proxy](#https-secure-reverse-proxy)
