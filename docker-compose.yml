@@ -1,19 +1,17 @@
-version: '3.8'
+
 services:
   #
-  # We begin with the reverse proxy stack
-  # reference :
+  # Reverse Proxy
+  #
   swag-proxy:
     image: lscr.io/linuxserver/swag
-    container_name: ${COMPOSE_PROJECT_NAME}_swag-entrypoint
+    container_name: ${COMPOSE_PROJECT_NAME}_swag
     restart: unless-stopped
     ports:
-      - '80:80'
-      - '443:443'
+      - "80:80"
+      - "443:443"
     volumes:
-      - ${PWD}/config/swag/config:/config
-      ## Uncomment the line below if you want to use the Authelia configuration snippets.
-      #- '${PWD}/config/swag/snippets:/snippets'
+      - ${PWD}/config/swag:/config
     environment:
       - PUID=1000
       - PGID=1000
@@ -21,7 +19,6 @@ services:
       - EMAIL=${CERTBOT_EMAIL}
       - SUBDOMAINS=${SUBDOMAINS}
       - ONLY_SUBDOMAINS=false
-      - DOCKER_MODS=linuxserver/mods:swag-dashboard
     cap_add:
       - NET_ADMIN
     networks:
@@ -29,14 +26,13 @@ services:
       - revproxy_apps
 
   #
-  # Admin services stack
+  # Admin & Monitoring
+  #
   portainer:
     image: portainer/portainer-ce:latest
     container_name: ${COMPOSE_PROJECT_NAME}_portainer
     command: -H unix:///var/run/docker.sock
     restart: always
-    depends_on:
-      - swag-proxy
     expose:
       - "9000"
     volumes:
@@ -45,14 +41,10 @@ services:
     networks:
       - revproxy_admin
 
-  #
-  # Server monitoring
-  homepage:
+  homepage: # optionnel si tu veux garder un dashboard visuel
     image: ghcr.io/benphelps/homepage:latest
     container_name: ${COMPOSE_PROJECT_NAME}_homepage
     restart: always
-    depends_on:
-      - swag-proxy
     expose:
       - "3000"
     volumes:
@@ -62,77 +54,116 @@ services:
       - revproxy_admin
 
   #
-  # File browser
-  # See https://github.com/hurlenko/filebrowser-docker for more information
-  filebrowser:
-    image: hurlenko/filebrowser
-    container_name: ${COMPOSE_PROJECT_NAME}_filebrowser
-    restart: always
-    depends_on:
-      - swag-proxy
-    environment:
-      - PUID=$(id -u)
-      - PGID=$(id -g)
-      - FB_BASEURL=/data
-      # The list of avalable options can be found here : https://filebrowser.org/cli/filebrowser#options.
+  # Apps
+  #
+  code-server:
+    image: codercom/code-server:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_code
+    restart: unless-stopped
     expose:
-      - "443:8080" 
+      - "8080"
+    environment:
+      - PASSWORD=${CODE_SERVER_PASSWORD}
     volumes:
-      - ${PWD}/config/filebrowser/filebrowser.db:/database/filebrowser.db 
-      - ${PWD}/config/filebrowser/config:/config/
-      - ${PWD}/config/homepage:/app/config
-      # 
-      # From here place other services data folders
-      - ${PWD}/config/swag/config/nginx:/data/config-swag
-      - ${PWD}/config/portainer:/data/config-portainer
-      - ${PWD}/config/homepage:/data/config-homepage
-      - ${PWD}/config/authelia/config:/data/config-authelia
+      - ${PWD}/config/code:/home/coder/project
+    networks:
+      - revproxy_apps
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_openobserve
+    restart: unless-stopped
+    expose:
+      - "5080"
+    volumes:
+      - ${PWD}/config/openobserve:/data
+    networks:
+      - revproxy_apps
+
+  restic-browser:
+    image: emuell/restic-browser:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_restic_browser
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - RB_REPO=/data/restic
+      - RB_PASSWORD=${RESTIC_PASSWORD}
+    volumes:
+      - backup_data:/data
+    networks:
+      - revproxy_apps
+
+  #
+  # Authentik (SSO)
+  #
+  authentik:
+    image: ghcr.io/goauthentik/server:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_authentik
+    restart: unless-stopped
+    expose:
+      - "9000"
+    environment:
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
+      - AUTHENTIK_POSTGRESQL__HOST=authentik-db
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+    volumes:
+      - ${PWD}/config/authentik:/data
+    depends_on:
+      - authentik-db
+    networks:
+      - revproxy_admin
+
+  authentik-db:
+    image: postgres:12-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}_authentik_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=authentik
+      - POSTGRES_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - POSTGRES_DB=authentik
+    volumes:
+      - ${PWD}/config/authentik-db:/var/lib/postgresql/data
     networks:
       - revproxy_admin
 
   #
-  # Now comes the Authelia container
-  authelia:
-    container_name: ${COMPOSE_PROJECT_NAME}_authelia
-    image: authelia/authelia
-    restart: unless-stopped
-    depends_on:
-      - swag-proxy
-      - authelia_redis
-    expose:
-      - 9091
+  # Backups
+  #
+  docker-volume-backup:
+    image: offen/docker-volume-backup
+    container_name: ${COMPOSE_PROJECT_NAME}_backup
+    restart: always
+    environment:
+      BACKUP_CRON_EXPRESSION: "0 3 * * *"
+      BACKUP_METHOD: restic
+      RESTIC_REPOSITORY: /backups/restic
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD}
+      RESTIC_FORGET_ARGS: "--keep-daily 7 --keep-weekly 4 --keep-monthly 3"
+      RESTIC_CHECK: "true"
     volumes:
-      - ${PWD}/config/authelia/config:/config
-    networks:
-      - revproxy_admin
+      - backup_data:/backups
+      - ${PWD}/config/portainer:/backup/portainer:ro
+      - ${PWD}/config/authentik:/backup/authentik:ro
+      - ${PWD}/config/openobserve:/backup/openobserve:ro
+      - ${PWD}/config/code:/backup/code:ro
 
-  # Redis image for Authelia
-  # https://www.authelia.com/configuration/session/redis/
-  authelia_redis:
-    image: redis:alpine
-    container_name: ${COMPOSE_PROJECT_NAME}_authelia_redis
-    restart: unless-stopped
-    depends_on:
-      - swag-proxy
-    expose:
-      - 6379
-    volumes:
-      - redis:/data
-    networks:
-      - revproxy_admin
-
-volumes:
-#  swag-config:
-#  authelia-config:
-#  portainer-data:
-#  homepage-config:
-  html:
-  redis:
-
+#
+# Networks & Volumes
+#
 networks:
   revproxy_admin:
     name: revproxy_admin
     external: true
+  revproxy_apps:
+    name: revproxy_apps
+    external: true
+
+volumes:
+  html:
+  backup_data:
   revproxy_apps:
     name: revproxy_apps
     external: true
