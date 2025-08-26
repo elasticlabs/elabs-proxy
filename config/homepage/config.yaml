@@ -1,0 +1,39 @@
+
+# Example Homepage configuration
+title: ElasticLabs
+theme: default
+
+links:
+  - Group: 
+      - ElasticLabs Docs:
+          - icon: mdi:book-open
+            href: https://labs.elasticlabs.co/
+
+services:
+  - Admin:
+      - Portainer:
+          href: /portainer/
+          description: Docker management
+          icon: si:portainer
+      - Authentik:
+          href: /authentik/
+          description: Identity Provider (SSO)
+          icon: si:auth0
+      - Filebrowser:
+          href: /files/
+          description: File explorer
+          icon: mdi:folder
+  - Dev:
+      - Code Server:
+          href: /code/
+          description: VSCode in the browser
+          icon: si:visualstudiocode
+  - Observability:
+      - OpenObserve:
+          href: /openobserve/
+          description: Logs/Metrics
+          icon: mdi:chart-box
+      - Restic Browser:
+          href: /restic/
+          description: Backups explorer
+          icon: mdi:backup-restore
