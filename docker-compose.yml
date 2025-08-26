@@ -1,4 +1,12 @@
 
+x-backup-volumes: &backup-volumes
+  - portainer_data:/backup/portainer_data:ro
+  - authentik_data:/backup/authentik_data:ro
+  - openobserve_data:/backup/openobserve_data:ro
+  - code_data:/backup/code_data:ro
+  # Homepage is a bind mount; back it up explicitly as a read-only bind:
+  - ${CONFIG_PATH}/homepage:/backup/homepage:ro
+
 services:
   #
   # Reverse Proxy
@@ -11,87 +19,19 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ${PWD}/config/swag:/config
+      - ${CONFIG_PATH}/swag:/config
     environment:
-      - PUID=1000
-      - PGID=1000
-      - URL=${VIRTUAL_HOST}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - URL=${DOMAIN}
       - EMAIL=${CERTBOT_EMAIL}
-      - SUBDOMAINS=${SUBDOMAINS}
+      - SUBDOMAINS=
       - ONLY_SUBDOMAINS=false
+      - DOCKER_MODS=linuxserver/mods:swag-dashboard
     cap_add:
       - NET_ADMIN
     networks:
       - revproxy_admin
-      - revproxy_apps
-
-  #
-  # Admin & Monitoring
-  #
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_portainer
-    command: -H unix:///var/run/docker.sock
-    restart: always
-    expose:
-      - "9000"
-    volumes:
-      - ${PWD}/config/portainer:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - revproxy_admin
-
-  homepage: # optionnel si tu veux garder un dashboard visuel
-    image: ghcr.io/benphelps/homepage:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_homepage
-    restart: always
-    expose:
-      - "3000"
-    volumes:
-      - ${PWD}/config/homepage:/app/config
-      - html:/app/public
-    networks:
-      - revproxy_admin
-
-  #
-  # Apps
-  #
-  code-server:
-    image: codercom/code-server:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_code
-    restart: unless-stopped
-    expose:
-      - "8080"
-    environment:
-      - PASSWORD=${CODE_SERVER_PASSWORD}
-    volumes:
-      - ${PWD}/config/code:/home/coder/project
-    networks:
-      - revproxy_apps
-
-  openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_openobserve
-    restart: unless-stopped
-    expose:
-      - "5080"
-    volumes:
-      - ${PWD}/config/openobserve:/data
-    networks:
-      - revproxy_apps
-
-  restic-browser:
-    image: emuell/restic-browser:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_restic_browser
-    restart: unless-stopped
-    expose:
-      - "8000"
-    environment:
-      - RB_REPO=/data/restic
-      - RB_PASSWORD=${RESTIC_PASSWORD}
-    volumes:
-      - backup_data:/data
-    networks:
       - revproxy_apps
 
   #
@@ -101,69 +41,149 @@ services:
     image: ghcr.io/goauthentik/server:latest
     container_name: ${COMPOSE_PROJECT_NAME}_authentik
     restart: unless-stopped
-    expose:
-      - "9000"
     environment:
       - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
-      - AUTHENTIK_POSTGRESQL__HOST=authentik-db
-      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__HOST=authentik_db
+      - AUTHENTIK_POSTGRESQL__USER=${AUTHENTIK_DB_USER}
       - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
-      - AUTHENTIK_POSTGRESQL__NAME=authentik
-    volumes:
-      - ${PWD}/config/authentik:/data
+      - AUTHENTIK_POSTGRESQL__NAME=${AUTHENTIK_DB_NAME}
     depends_on:
-      - authentik-db
+      - authentik_db
+    volumes:
+      - authentik_data:/data
     networks:
       - revproxy_admin
 
-  authentik-db:
-    image: postgres:12-alpine
+  authentik_db:
+    image: postgres:13
     container_name: ${COMPOSE_PROJECT_NAME}_authentik_db
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=authentik
+      - POSTGRES_USER=${AUTHENTIK_DB_USER}
       - POSTGRES_PASSWORD=${AUTHENTIK_DB_PASSWORD}
-      - POSTGRES_DB=authentik
+      - POSTGRES_DB=${AUTHENTIK_DB_NAME}
     volumes:
-      - ${PWD}/config/authentik-db:/var/lib/postgresql/data
+      - ${CONFIG_PATH}/authentik/db:/var/lib/postgresql/data
+    networks:
+      - revproxy_admin
+
+  # Authentik Outpost (NGINX forward-auth)
+  authentik-proxy:
+    image: ghcr.io/goauthentik/proxy:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_authentik_proxy
+    restart: unless-stopped
+    environment:
+      - AUTHENTIK_HOST=${AUTHENTIK_HOST}
+      - AUTHENTIK_TOKEN=${AUTHENTIK_OUTPOST_TOKEN}
+      - AUTHENTIK_INSECURE=${AUTHENTIK_INSECURE}
+      - LOG_LEVEL=info
+    networks:
+      - revproxy_admin
+
+  #
+  # Admin & Monitoring
+  #
+  homepage:
+    image: ghcr.io/benphelps/homepage:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_homepage
+    restart: always
+    volumes:
+      - ${CONFIG_PATH}/homepage:/app/config
+    networks:
+      - revproxy_admin
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_portainer
+    command: -H unix:///var/run/docker.sock
+    restart: always
+    volumes:
+      - ${CONFIG_PATH}/portainer:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - revproxy_admin
+
+  code-server:
+    image: codercom/code-server:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_code
+    restart: unless-stopped
+    environment:
+      - PASSWORD=${CODE_SERVER_PASSWORD}
+    volumes:
+      - code_data:/home/coder/project
+    networks:
+      - revproxy_admin
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_openobserve
+    restart: unless-stopped
+    environment:
+      - ZO_DATA_DIR=/data
+    volumes:
+      - openobserve_data:/data
+    networks:
+      - revproxy_admin
+
+  restic-browser:
+    image: emuell/restic-browser:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_restic_browser
+    restart: unless-stopped
+    environment:
+      - RB_REPO=/data/restic
+      - RB_PASSWORD=${RESTIC_PASSWORD}
+    volumes:
+      - backup_data:/data
+    networks:
+      - revproxy_admin
+
+  filebrowser:
+    image: hurlenko/filebrowser:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_filebrowser
+    restart: unless-stopped
+    environment:
+      - FB_BASEURL=/files
+      - PUID=${PUID}
+      - PGID=${PGID}
+    volumes:
+      - portainer_data:/srv/portainer:ro
+      - authentik_data:/srv/authentik:ro
+      - openobserve_data:/srv/openobserve:ro
+      - code_data:/srv/code:ro
+      - backup_data:/srv/restic:ro
+      - ${CONFIG_PATH}/homepage:/srv/homepage:ro
     networks:
       - revproxy_admin
 
   #
   # Backups
   #
-  docker-volume-backup:
+  backup:
     image: offen/docker-volume-backup
     container_name: ${COMPOSE_PROJECT_NAME}_backup
     restart: always
     environment:
-      BACKUP_CRON_EXPRESSION: "0 3 * * *"
+      BACKUP_CRON_EXPRESSION: ${BACKUP_CRON}
       BACKUP_METHOD: restic
       RESTIC_REPOSITORY: /backups/restic
       RESTIC_PASSWORD: ${RESTIC_PASSWORD}
-      RESTIC_FORGET_ARGS: "--keep-daily 7 --keep-weekly 4 --keep-monthly 3"
+      RESTIC_FORGET_ARGS: ${RESTIC_FORGET_ARGS}
       RESTIC_CHECK: "true"
     volumes:
       - backup_data:/backups
-      - ${PWD}/config/portainer:/backup/portainer:ro
-      - ${PWD}/config/authentik:/backup/authentik:ro
-      - ${PWD}/config/openobserve:/backup/openobserve:ro
-      - ${PWD}/config/code:/backup/code:ro
+      <<: *backup-volumes
+    networks:
+      - revproxy_admin
 
-#
-# Networks & Volumes
-#
 networks:
   revproxy_admin:
     name: revproxy_admin
-    external: true
   revproxy_apps:
     name: revproxy_apps
-    external: true
 
 volumes:
-  html:
+  portainer_data:
+  authentik_data:
+  openobserve_data:
+  code_data:
   backup_data:
-  revproxy_apps:
-    name: revproxy_apps
-    external: true
