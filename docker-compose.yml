@@ -399,10 +399,8 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME}_dozzle
     expose:
       - "8080"
-    command:
-      - --base /logs
-      - --follow-logs true
     environment:
+      DOZZLE_BASE: /logs
       DOZZLE_LEVEL: info
       DOZZLE_NO_ANALYTICS: "true"
       DOZZLE_REMOTE_AGENT: ""
