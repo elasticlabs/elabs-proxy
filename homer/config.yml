@@ -14,7 +14,7 @@ icon: "fa-solid fa-user-gear"
 
 header: true # Set to false to hide the header
 
-footer: '<p>Created with <span class="has-text-danger">❤️</span> with <a href="https://bulma.io/">bulma</a>, <a href="https://vuejs.org/">vuejs</a> & <a href="https://fontawesome.com/">font awesome</a> // Fork me on <a href="https://github.com/bastienwirtz/homer"><i class="fab fa-github-alt"></i></a></p>' # set false if you want to hide it.
+footer: '<p>Created with <span class="has-text-danger">❤️</span> in Paris, France.</p>' # set false if you want to hide it.
 # footer: false
 
 columns: 3 # "auto" or number (must be a factor of 12: 1, 2, 3, 4, 6, 12)
@@ -42,7 +42,7 @@ theme: default # 'default' or one of the themes available in Homer
 links:
   - name: "Elasticlabs GitHub"
     icon: "fab fa-github"
-    url: "https://github.com/elasticlabs"
+    url: "https://github.com/elasticlabs/elabs-proxy#top"
     target: "_blank" # optional html tag target attribute
 
   - name: "JetPunk"

@@ -54,8 +54,9 @@ A **production-grade self-hosted platform stack** built around:
     - [Session policy](#session-policy)
     - [Keycloak : OIDC client secret](#keycloak--oidc-client-secret)
   - [Applying OIDC to the canary](#applying-oidc-to-the-canary)
-    - [Reload SWAG](#reload-swag)
+    - [Reload SWAG and oauth2-proxy](#reload-swag-and-oauth2-proxy)
     - [Test in private browsing](#test-in-private-browsing)
+  - [Applying OIDC to the `admin` subdomain and apps](#applying-oidc-to-the-admin-subdomain-and-apps)
     - [🛠 Troubleshooting tips](#-troubleshooting-tips)
   - [🔐 OIDC — Critical Lessons (from debugging)](#-oidc--critical-lessons-from-debugging)
     - [⚠️ *Reverse Proxy + OIDC Rules*](#️-reverse-proxy--oidc-rules)
@@ -83,7 +84,7 @@ This repository provides a **ready-to-run infrastructure stack** for:
 - Dev / staging environments
 - Future extensible platforms (APIs, Supabase, etc.)    
 
-*📁 Project Structure*
+**📁 Project Structure**
 
 ```text
 .
@@ -150,7 +151,7 @@ Before running Docker, secure your host.
 
 ## 🔑 SSH Key Setup (from your local machine)
 
-1. *Generate SSH key*
+1. **Generate SSH key**
 
 On your local machine: 
 
@@ -160,7 +161,7 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 Press enter to accept defaults: `~/.ssh/id_ed25519`
 Optional: add passphrase (recommended)
 
-2. *Copy key to server*
+2. **Copy key to server**
 
 `ssh-copy-id user@your-server-ip`
 
@@ -168,11 +169,11 @@ If not available:
 
 `cat ~/.ssh/id_ed25519.pub | ssh user@your-server-ip "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"`
 
-3. Test login
+3. **Test login**
 
 `ssh user@your-server-ip`
 
-4. Harden SSH
+4. **Harden SSH**
 
 ```bash
 sudo nano /etc/ssh/sshd_config
@@ -204,11 +205,11 @@ sudo ufw enable
 
 ## 🛡 fail2ban
 
-*Install*
+**Install**
 
 `sudo apt update && sudo apt install fail2ban -y`
 
-*Config*
+**Config**
 `sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local`
 
 Example:
@@ -225,7 +226,7 @@ enabled = true
 enabled = true
 ```
 
-*Configure*
+**Configure**
 ```bash
 sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
 ```
@@ -244,7 +245,8 @@ enabled = true
 enabled = true
 ```
 
-*Start*
+**Start**
+
 ```bash
 sudo systemctl enable fail2ban
 sudo systemctl start fail2ban
@@ -345,7 +347,7 @@ Ready? Go!
 
 Then `cd elabs-proxy`
 
-*Setup the environment* : 
+**Setup the environment** : 
 
 * `make cp-env` : creates .env
 * `make env-check` : verifies that required variables and files are OK
@@ -354,7 +356,7 @@ Then `cd elabs-proxy`
 👉 The generated secrets variables need to be manually copy-pasted in .env, so you explicity know what you're doing. 
 Of course, the `.env` file isn't git synced. 
 
-*Initialize* : `make init`
+**Initialize** : `make init`
 
 👉 This will:
 
@@ -362,7 +364,7 @@ Of course, the `.env` file isn't git synced.
 * prepare configs
 * render Keycloak bootstrap
 
-🧪 *Pre-flight checklist*
+🧪 **Pre-flight checklist**
 
 | Check         | Command           |
 | ------------- | ----------------- |
@@ -375,7 +377,7 @@ Of course, the `.env` file isn't git synced.
 
 If everything goes well, just run the stack : `make up`
 
-🌐 *Access and validation checklist*
+🌐 **Access and validation checklist**
 
 | Service     | URL                                  | Expected                          |
 | ----------- | ------------------------------------ | --------------------------------- |
@@ -395,7 +397,7 @@ If everything when well, access to `https://admin.YOUR_DOMAIN` address in a brow
 
 ### Common first boot issues
 
-1. *SWAG shows default page*
+1. **SWAG shows default page**
 
 👉 Cause:
 
@@ -403,15 +405,15 @@ If everything when well, access to `https://admin.YOUR_DOMAIN` address in a brow
 - DNS not ready
 - `__BASE_DOMAIN__` not replaced
 
-2. *Certificates not generated*
+2. **Certificates not generated**
 
 👉  Check SWAG logs `docker compose logs swag`
 
-1. *Grafana shows DOWN*
+1. **Grafana shows DOWN**
 
 👉 Usually Prometheus auth issue
 
-4. *oauth2-proxy fails*
+4. **oauth2-proxy fails**
 
 👉 Common: `cookie_secret must be 16, 24, or 32 bytes`
 
@@ -459,11 +461,11 @@ flowchart LR
 >Before OIDC, protect admin routes (optional). 
 > If you're confident and have enough time for potential debug times, you can skip this step, then navigate straight to phase 2. 
 
-*Create an admin user* : `docker compose exec -it swag htpasswd -c /config/nginx/.htpasswd <user>`
+**Create an admin user** : `docker compose exec -it swag htpasswd -c /config/nginx/.htpasswd <user>`
 
 👉 This will create a credential for the given user, and store it right inside SWAG volume
 
-*Enable protection in appropriate files* 
+**Enable protection in appropriate files** 
 
 To activate Phase 1 `htpasswd` protection, simply uncomment the following line in `./swag/config/nginx/site-confs/admin.subdomain.conf` : 
 
@@ -475,7 +477,7 @@ To activate Phase 1 `htpasswd` protection, simply uncomment the following line i
         include /config/nginx/custom/admin-auth.conf;
 ```
 
-The *reload SWAG proxy* : 
+The **reload SWAG proxy** : 
 
 ```bash
 docker compose exec -it swag nginx -t
@@ -506,7 +508,7 @@ We'll be using Hashicorp [HTTP echo](https://github.com/hashicorp/http-echo) con
 
 > Never protect the full platform first. Always validate the canary first.
 
-*Goal*
+**Goal**
 
 The canary will prove that:
 
@@ -531,8 +533,8 @@ What needs to be prepared
 
 ### Phase 2 — Keycloak client recap
 
-*Realm* : elabs
-*Client* : oauth2-proxy
+**Realm** : elabs
+**Client** : oauth2-proxy
 
 | Setting               | Value          | Why                            |
 | --------------------- | -------------- | ------------------------------ |
@@ -544,21 +546,21 @@ What needs to be prepared
 | Standard flow         | ON             | Browser login flow             |
 | Direct access grants  | OFF            | Not needed                     |
 
-*Redirect URIs*
+**Redirect URIs**
 
 | URI                                            | Purpose                         |
 | ---------------------------------------------- | ------------------------------- |
 | `https://labs.YOUR_DOMAIN/oauth2/callback`  | oauth2-proxy callback for labs  |
 | `https://admin.YOUR_DOMAIN/oauth2/callback` | oauth2-proxy callback for admin |
 
-*Web origins*
+**Web origins**
 
 | Origin                         | Purpose                  |
 | ------------------------------ | ------------------------ |
 | `https://labs.YOUR_DOMAIN`  | browser origin for labs  |
 | `https://admin.YOUR_DOMAIN` | browser origin for admin |
 
-*Credentials*
+**Credentials**
 
 | Item                   | Meaning                                     | Must match                   |
 | ---------------------- | ------------------------------------------- | ---------------------------- |
@@ -585,7 +587,7 @@ Important:
 
 ### Phase 2 — routing recap
 
-*SWAG responsibilities*
+**SWAG responsibilities**
 
 | Component          | Role                                                |
 | ------------------ | --------------------------------------------------- |
@@ -595,7 +597,7 @@ Important:
 | `@oauth2_start`    | Nginx named location that redirects to oauth2-proxy |
 | protected routes   | routes that include `admin-auth-oidc.conf`          |
 
-*Important routing rule*
+**Important routing rule**
 
 For /oauth2/auth and /oauth2/ routes:
 
@@ -623,7 +625,7 @@ Browser->>SWAG: retry request
 SWAG->>App: access granted
 ```
 
-🧩 *Components*
+🧩 **Components**
 
 | Component    | Role                       |
 | ------------ | -------------------------- |
@@ -632,7 +634,7 @@ SWAG->>App: access granted
 | Keycloak     | identity provider          |
 | Google       | external login             |
 
-*Summary*
+**Summary**
 
 | Step | Component                       | What happens                                  |
 | ---- | ------------------------------- | --------------------------------------------- |
@@ -654,7 +656,7 @@ SWAG->>App: access granted
 | ▲ [Top](#top) |
 | --- |
 
-*Required variables*
+**Required variables**
 
 | Variable                     | Description           |
 | ---------------------------- | --------------------- |
@@ -668,7 +670,7 @@ SWAG->>App: access granted
 * Client secret ≠ cookie secret
 * Cookie secret must be valid length (16/24/32 bytes)
 
-🔐 *Session Policy* : max 8h, sessions of 30min
+🔐 **Session Policy** : max 8h, sessions of 30min
 
 ---
 
@@ -695,14 +697,14 @@ This is more stable over time.
 | Client authentication | ON             |
 | Standard flow         | ON             |
 
-*Redirect URIs*
+**Redirect URIs**
 
 ```bash
 https://labs.<domain>/oauth2/callback
 https://admin.<domain>/oauth2/callback
 ```
 
-*Credentials*
+**Credentials**
 
 Copy : `Client Secret → .env → OAUTH2_PROXY_CLIENT_SECRET`
 
@@ -717,7 +719,7 @@ In Keycloak **Identity Providers → Google**, paste if you already have them:
 - Client ID
 - Client Secret
 
-*Google Cloud Console configuration and variables*
+**Google Cloud Console configuration and variables**
 
 In Google Cloud Console, create an OAuth client of type **Web application**. 
 
@@ -751,7 +753,7 @@ This is the single most common configuration mistake.
 Keep this manual and documented.
 This has proven more stable than trying to fully encode the Browser flow in realm bootstrap JSON.
 
-*Recommended browser flow shape*
+**Recommended browser flow shape**
 
 In **Authentication → Browser**:
 
@@ -772,7 +774,7 @@ Then configure `Identity Provider Redirector` with:
 
 - provider alias: `google`
 
-*Why this shape?*
+**Why this shape?**
 
 It provides:
 
@@ -790,14 +792,14 @@ It also avoids fragile full-flow imports.
 > Only users manually created in Keycloak by an administrator are allowed to complete the login flow.
 > If no matching internal account exists, login is denied.
 
-*We'll use this model* :
+**We'll use this model** :
 
 * registrationAllowed = false in the realm
 * pre-create users manually in Keycloak with the exact allowed email address
 * keep Google as the external IdP
 * customize the First Broker Login flow so new social users are not auto-created
 
-*Realm settings* :
+**Realm settings** :
 
 Keep:
 
@@ -807,7 +809,7 @@ Keep:
 
 That closes self-registration on the Keycloak side.
 
-*Create a local user and group*
+**Create a local user and group**
 
 - set username
 - set email
@@ -816,7 +818,7 @@ That closes self-registration on the Keycloak side.
 - Create groups (example: `Administrators`)
 - Add your user to the appropriate group.
 
-*First Broker Login flow*
+**First Broker Login flow**
 
 Create a dedicated flow for Google login and assign it in the Google IdP config.
 
@@ -850,7 +852,7 @@ Use **Required Actions** for:
 
 This is smoother than forcing OTP directly into the Browser flow too early.
 
-*Recommended TOTP policy* :
+**Recommended TOTP policy** :
 
 - TOTP
 - 6 digits
@@ -867,14 +869,14 @@ The target behavior is:
 - longer continuity while active
 - hard absolute max session duration
 
-*In oauth2-proxy*
+**In oauth2-proxy**
 
 Recommended settings:
 
 - session max: **8h**
 - refresh while active: **30m**
 
-*In Keycloak*
+**In Keycloak**
 
 Mirror the same intent:
 
@@ -898,7 +900,7 @@ Copy the `Client Secret` and paste it i your `.env` file variable `OAUTH2_PROXY_
 | ▲ [Top](#top) |
 | --- |
 
-*Switch the include lines*
+**Switch the include lines**
 
 In `labs.<base-domain>` configuration:
 
@@ -949,11 +951,12 @@ server {
 
 ```
 
-### Reload SWAG
+### Reload SWAG and oauth2-proxy
 
 ```bash
 docker compose exec -it swag nginx -t
 docker compose exec -it swag nginx -s reload
+docker compose up -d --force-recreate oauth2-proxy
 ```
 
 ### Test in private browsing
@@ -973,6 +976,12 @@ Expected result:
 
 If this works, the OIDC chain is validated.
 
+## Applying OIDC to the `admin` subdomain and apps
+
+This should be very straightforward now. Simply repeat the steps used for the canary. 
+File : `swag/config/nginx/site-confs/admin.subdomain.conf`
+
+
 ### 🛠 Troubleshooting tips 
 
 * SWAG nginx config : `docker compose exec swag nginx -T`
@@ -986,7 +995,7 @@ If this works, the OIDC chain is validated.
 
 ### ⚠️ *Reverse Proxy + OIDC Rules*
 
-1. *Do NOT blindly include proxy headers*
+1. **Do NOT blindly include proxy headers**
 
 Bad : `include /config/nginx/proxy.conf;`
 
@@ -998,18 +1007,18 @@ proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-2. *Keep /oauth2/auth minimal*
+2. **Keep /oauth2/auth minimal**
 
 This endpoint is very sensible.
 
-3. *Always debug with:*
+3. **Always debug with:**
 
 ```bash
 docker logs oauth2-proxy
 docker logs swag
 ```
 
-4. *Use internal tests*
+4. **Use internal tests**
 
 ```bash
 docker compose exec -it swag sh
