@@ -72,6 +72,16 @@ services:
         subtitle: "Container management"
         url: "https://admin.elasticlabs.co/portainer/"
 
+      - name: "Files"
+        icon: "fa-solid fa-folder-open"
+        subtitle: "Named volumes browser"
+        url: "https://admin.elasticlabs.co/data/"
+
+      - name: "Dozzle (logs)"
+        icon: "fa-solid fa-scroll"
+        subtitle: "Container logs UI"
+        url: "https://admin.elasticlabs.co/logs/"
+      
       # Smart card version for Portainer
       # Displays container counts (running/dead/misc), version, and online status from your Portainer instance.
       # Requirements: Portainer version 1.11 or later
@@ -87,6 +97,9 @@ services:
       #     - "raspberry"
       #     - "local"
 
+  - name: "Observability"
+    icon: "fas fa-chart-bar"
+    items:      
       - name: "Grafana"
         icon: "fa-solid fa-chart-line"
         subtitle: "Observability"
@@ -110,13 +123,3 @@ services:
         icon: "fa-solid fa-microchip"
         subtitle: "Container metrics UI"
         url: "https://admin.elasticlabs.co/cadvisor/"
-
-      - name: "Files"
-        icon: "fa-solid fa-folder-open"
-        subtitle: "Named volumes browser"
-        url: "https://admin.elasticlabs.co/data/"
-
-      - name: "Dozzle (logs)"
-        icon: "fa-solid fa-scroll"
-        subtitle: "Container logs UI"
-        url: "https://admin.elasticlabs.co/logs/"
