@@ -1,0 +1,32 @@
+{
+  "title": "Logs Debug",
+  "panels": [
+    {
+      "type": "logs",
+      "title": "All Logs",
+      "targets": [
+        {
+          "expr": "{stack=\"revproxy\"}"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Errors",
+      "targets": [
+        {
+          "expr": "{stack=\"revproxy\"} |= \"error\""
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Auth Issues",
+      "targets": [
+        {
+          "expr": "{service=\"oauth2-proxy\"} |= \"401\""
+        }
+      ]
+    }
+  ]
+}

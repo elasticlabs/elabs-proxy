@@ -1,138 +1,451 @@
-version: '3.8'
+# Definition of common service defaults to avoid repetition
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging: 
+    # This ensures that docker logs never get too fat ;-)
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  networks:
+    - revproxy_apps
+
+x-observability-labels: &common-observability-labels
+  obs.stack: zone-proxy
+  obs.domain: admin
+  obs.env: prod
+
 services:
-  #
-  # We begin with the reverse proxy stack
-  # reference :
-  swag-proxy:
-    image: lscr.io/linuxserver/swag
-    container_name: ${COMPOSE_PROJECT_NAME}_swag-entrypoint
+  swag:
+    image: lscr.io/linuxserver/swag:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_swag
     restart: unless-stopped
     ports:
-      - '80:80'
-      - '443:443'
-    volumes:
-      - ${PWD}/config/swag/config:/config
-      ## Uncomment the line below if you want to use the Authelia configuration snippets.
-      #- '${PWD}/config/swag/snippets:/snippets'
+      - "80:80"
+      - "443:443"
     environment:
-      - PUID=1000
-      - PGID=1000
-      - URL=${VIRTUAL_HOST}
-      - EMAIL=${CERTBOT_EMAIL}
-      - SUBDOMAINS=${SUBDOMAINS}
-      - ONLY_SUBDOMAINS=false
-      - DOCKER_MODS=linuxserver/mods:swag-dashboard
-    cap_add:
-      - NET_ADMIN
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      URL: ${SWAG_URL}
+      SUBDOMAINS: ${SWAG_SUBDOMAINS}
+      VALIDATION: ${SWAG_VALIDATION}
+      ONLY_SUBDOMAINS: ${SWAG_ONLY_SUBDOMAINS}
+      STAGING: ${SWAG_STAGING}
+      EMAIL: ${ADMIN_EMAIL}
+    labels:
+      <<: *common-observability-labels
+      obs.service: swag
+      obs.role: reverse-proxy
+    volumes:
+      - ./swag/config:/config
     networks:
-      - revproxy_admin
+      - swag_net
       - revproxy_apps
 
-  #
-  # Admin services stack
+  homer:
+    image: b4bz/homer:v25.11.1
+    container_name: ${COMPOSE_PROJECT_NAME}_homer
+    expose:
+      - "8080"
+    volumes:
+      - ./homer/config.yml:/www/assets/config.yml:ro
+    labels:
+      <<: *common-observability-labels
+      obs.service: homer
+      obs.role: home-dashboard
+    <<: *service-defaults
+
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ce:2.39.0
     container_name: ${COMPOSE_PROJECT_NAME}_portainer
-    command: -H unix:///var/run/docker.sock
-    restart: always
-    depends_on:
-      - swag-proxy
     expose:
       - "9000"
+      - "9443"
+    command:
+      - --base-url
+      - /portainer
     volumes:
-      - ${PWD}/config/portainer:/data
       - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - revproxy_admin
+      - portainer_data:/data
+    labels:
+      <<: *common-observability-labels
+      obs.service: portainer
+      obs.role: container-management
+    <<: *service-defaults
 
-  #
-  # Server monitoring
-  homepage:
-    image: ghcr.io/benphelps/homepage:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_homepage
-    restart: always
+  grafana:
+    image: grafana/grafana:12.3.6
+    container_name: ${COMPOSE_PROJECT_NAME}_grafana
     depends_on:
-      - swag-proxy
+      - prometheus
+      - loki
+      - tempo
+      - alertmanager
     expose:
       - "3000"
-    volumes:
-      - ${PWD}/config/homepage:/app/config
-      - html:/app/public
-    networks:
-      - revproxy_admin
-
-  #
-  # File browser
-  # See https://github.com/hurlenko/filebrowser-docker for more information
-  filebrowser:
-    image: hurlenko/filebrowser
-    container_name: ${COMPOSE_PROJECT_NAME}_filebrowser
-    restart: always
-    depends_on:
-      - swag-proxy
     environment:
-      - PUID=$(id -u)
-      - PGID=$(id -g)
-      - FB_BASEURL=/data
-      # The list of avalable options can be found here : https://filebrowser.org/cli/filebrowser#options.
-    expose:
-      - "443:8080" 
+      GF_SERVER_ROOT_URL: https://admin.${BASE_DOMAIN}/grafana/
+      GF_SERVER_DOMAIN: admin.${BASE_DOMAIN}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_METRICS_ENABLED: "true"
+      GF_METRICS_DISABLE_TOTAL_STATS: "false"
+      GF_INSTALL_PLUGINS: "grafana-polystat-panel,camptocamp-prometheus-alertmanager-datasource"
+    labels:
+      <<: *common-observability-labels
+      obs.service: grafana
+      obs.role: monitoring-dashboard
     volumes:
-      - ${PWD}/config/filebrowser/filebrowser.db:/database/filebrowser.db 
-      - ${PWD}/config/filebrowser/config:/config/
-      - ${PWD}/config/homepage:/app/config
+      - ./grafana/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    <<: *service-defaults
+
+  loki:
+    image: grafana/loki:3.6.7
+    container_name: ${COMPOSE_PROJECT_NAME}_loki
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - loki_data:/loki
+      - ./grafana/loki/config/loki-config.yml:/etc/loki/loki-config.yml:ro
+    labels:
+      <<: *common-observability-labels
+      obs.service: loki
+      obs.role: log-aggregation
+    expose:
+      - "3100"
+    <<: *service-defaults
+
+  prometheus:
+    image: prom/prometheus:v3.8.0
+    container_name: ${COMPOSE_PROJECT_NAME}_prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.external-url=/prometheus/
+      - --web.route-prefix=/
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.wal-compression
+      - --storage.tsdb.retention.size=10GB
+      - --web.enable-lifecycle
+    volumes:
+      - ./grafana/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./grafana/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    labels:
+      <<: *common-observability-labels
+      obs.service: prometheus
+      obs.role: metrics-aggregation
+    expose:
+      - "9090"
+    <<: *service-defaults
+
+  alloy:
+    image: grafana/alloy:v1.14.1
+    container_name: ${COMPOSE_PROJECT_NAME}_alloy
+    expose:
+      - "12345"
+      - "4317"
+      - "4318"
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+      - ./grafana/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    labels:
+      <<: *common-observability-labels
+      obs.service: alloy
+      obs.role: log-collection
+    <<: *service-defaults
+
+  tempo:
+    image: grafana/tempo:2.10.3
+    container_name: ${COMPOSE_PROJECT_NAME}_tempo
+    expose:
+      - "3200"
+      - "4317"
+      - "4318"
+    command:
+      - -config.file=/etc/tempo/tempo-config.yaml
+    volumes:
+      - tempo_data:/var/tempo
+      - ./grafana/tempo/tempo-config.yaml:/etc/tempo/tempo-config.yaml:ro
+    labels:
+      <<: *common-observability-labels
+      obs.service: tempo
+      obs.role: trace-aggregation
+    <<: *service-defaults
+
+  node-exporter:
+    image: prom/node-exporter:v1.11.1
+    container_name: ${COMPOSE_PROJECT_NAME}_node-exporter
+    expose:
+      - "9100"
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - ./grafana/node-exporter/textfile:/textfile:ro
+    labels:
+      <<: *common-observability-labels
+      obs.service: node-exporter
+      obs.role: node-metrics
+    <<: *service-defaults
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_cadvisor
+    expose:
+      - "8080"
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    command:
+      - -url_base_prefix=/cadvisor
+      - -housekeeping_interval=30s
+      - -max_housekeeping_interval=35s
+      - -event_storage_event_limit=default=0
+      - -event_storage_age_limit=default=0
+      - -disable_metrics=percpu,sched,tcp,udp,referenced_memory
+      - -docker_only=true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/cadvisor/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      <<: *common-observability-labels
+      obs.service: cadvisor
+      obs.role: container-metrics
+    <<: *service-defaults
+
+  alertmanager:
+    image: prom/alertmanager:v0.32.0
+    container_name: ${COMPOSE_PROJECT_NAME}_alertmanager
+    expose:
+      - "9093"
+    volumes:
+      - ./grafana/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/config.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=https://admin.${BASE_DOMAIN}/alertmanager/
+      - --web.route-prefix=/
+    labels:
+      <<: *common-observability-labels
+      obs.service: alertmanager
+      obs.role: alerting
+    <<: *service-defaults
+
+  filebrowser:
+    image: filebrowser/filebrowser:v2.63.2
+    container_name: ${COMPOSE_PROJECT_NAME}_filebrowser
+    expose:
+      - "80"
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      FB_ROOT: /srv
+    command: >
+      --database /database/filebrowser.db
+      --root /srv
+      --baseurl /data
+      --address 0.0.0.0
+      --port 80
+      --log stdout
+    volumes:
+      - keycloak_postgres_data:/srv/keycloak-postgres:ro
+      - portainer_data:/srv/portainer:ro
+      - grafana_data:/srv/grafana:ro
+      - loki_data:/srv/loki:ro
+      - prometheus_data:/srv/prometheus:ro
+      - tempo_data:/srv/tempo:ro
+      - ./swag/config:/srv/swag:ro
+      - filebrowser_database:/database
+      - filebrowser_config:/config
+    labels:
+      <<: *common-observability-labels
+      obs.service: filebrowser
+      obs.role: file-management
+    <<: *service-defaults
+
+  keycloak-postgresql:
+    image: postgres:16.13
+    container_name: ${COMPOSE_PROJECT_NAME}_keycloak-postgresql
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    labels:
+      <<: *common-observability-labels
+      obs.service: keycloak-postgresql
+      obs.role: database
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER} -d ${KEYCLOAK_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: *service-defaults
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.2
+    container_name: ${COMPOSE_PROJECT_NAME}_keycloak
+    expose:
+      - "8080"
+      - "8443"
+      - "9000"
+    command:
+      - start
+      - --import-realm
+      - --http-enabled=true
+      - --proxy-headers=xforwarded
+      - --hostname=${KEYCLOAK_HOSTNAME}
+      - --hostname-strict=true
+      - --metrics-enabled=true
+      - --health-enabled=true
+    depends_on:
+      keycloak-postgresql:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgresql:5432/${KEYCLOAK_DB}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      KEYCLOAK_GOOGLE_CLIENT_ID: ${KEYCLOAK_GOOGLE_CLIENT_ID}
+      KEYCLOAK_GOOGLE_CLIENT_SECRET: ${KEYCLOAK_GOOGLE_CLIENT_SECRET}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      JAVA_OPTS_KC_HEAP: "-XX:InitialRAMPercentage=15 -XX:MaxRAMPercentage=35"
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    mem_limit: 768m
+    labels:
+      <<: *common-observability-labels
+      obs.service: keycloak
+      obs.role: iam
+    <<: *service-defaults
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.1
+    container_name: ${COMPOSE_PROJECT_NAME}_oauth2-proxy
+    depends_on:
+      - keycloak
+    expose:
+      - "4180"
+    environment:
+      OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://auth.${BASE_DOMAIN}/realms/elabs
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: ${OAUTH2_PROXY_REDIRECT_URL}
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_UPSTREAMS: static://202
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      # Important: no session should last more than 8 hours to limit the blast 
+      # radius in case of cookie theft. You can adjust this value as needed, 
+      # but make sure to balance security and usability. 
+      OAUTH2_PROXY_COOKIE_EXPIRE: 4h
+      OAUTH2_PROXY_COOKIE_REFRESH: 20m
+      OAUTH2_PROXY_SESSION_STORE_TYPE: cookie
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_HTTPONLY: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+      OAUTH2_PROXY_COOKIE_DOMAINS: .${BASE_DOMAIN}
       # 
-      # From here place other services data folders
-      - ${PWD}/config/swag/config/nginx:/data/config-swag
-      - ${PWD}/config/portainer:/data/config-portainer
-      - ${PWD}/config/homepage:/data/config-homepage
-      - ${PWD}/config/authelia/config:/data/config-authelia
-    networks:
-      - revproxy_admin
+      OAUTH2_PROXY_WHITELIST_DOMAINS: .${BASE_DOMAIN}
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_SCOPE: "openid profile email"
+      OAUTH2_PROXY_CODE_CHALLENGE_METHOD: S256
+      OAUTH2_PROXY_LOG_LEVEL: debug
+      OAUTH2_PROXY_SILENCE_PING_LOGGING: false
+    labels:
+      <<: *common-observability-labels
+      obs.service: oauth2-proxy
+      obs.role: auth-proxy
+    <<: *service-defaults
 
-  #
-  # Now comes the Authelia container
-  authelia:
-    container_name: ${COMPOSE_PROJECT_NAME}_authelia
-    image: authelia/authelia
-    restart: unless-stopped
-    depends_on:
-      - swag-proxy
-      - authelia_redis
+  dozzle:
+    image: amir20/dozzle:v8.14.6
+    container_name: ${COMPOSE_PROJECT_NAME}_dozzle
     expose:
-      - 9091
+      - "8080"
+    command:
+      - --base=/logs
+      - --follow-logs=true
+    environment:
+      DOZZLE_BASE: /logs
+      DOZZLE_LEVEL: info
+      DOZZLE_NO_ANALYTICS: "true"
+      DOZZLE_REMOTE_AGENT: ""
     volumes:
-      - ${PWD}/config/authelia/config:/config
-    networks:
-      - revproxy_admin
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      <<: *common-observability-labels
+      obs.service: dozzle
+      obs.role: live-logs
+    <<: *service-defaults
 
-  # Redis image for Authelia
-  # https://www.authelia.com/configuration/session/redis/
-  authelia_redis:
-    image: redis:alpine
-    container_name: ${COMPOSE_PROJECT_NAME}_authelia_redis
-    restart: unless-stopped
-    depends_on:
-      - swag-proxy
+  oidc-canary:
+    image: hashicorp/http-echo:1.0.0
+    container_name: ${COMPOSE_PROJECT_NAME}_oidc-canary
+    command:
+      - -listen=:5678
+      - -text=🪄 Your OIDC authentication chain works like a charm.
     expose:
-      - 6379
-    volumes:
-      - redis:/data
-    networks:
-      - revproxy_admin
-
-volumes:
-#  swag-config:
-#  authelia-config:
-#  portainer-data:
-#  homepage-config:
-  html:
-  redis:
+      - "5678"
+    labels:
+      obs.stack: zone-proxy
+      obs.domain: labs
+      obs.service: oidc-canary
+      obs.role: auth-canary
+      obs.env: prod
+    <<: *service-defaults
 
 networks:
-  revproxy_admin:
-    name: revproxy_admin
+  swag_net:
     external: true
+    name: ${SWAG_NETWORK}
   revproxy_apps:
-    name: revproxy_apps
     external: true
+    name: ${REVPROXY_APPS_NETWORK}
+
+volumes:
+  keycloak_postgres_data:
+  portainer_data:
+  grafana_data:
+  loki_data:
+  prometheus_data:
+  tempo_data:
+  alertmanager_data:
+  filebrowser_database:
+  filebrowser_config:

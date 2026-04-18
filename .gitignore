@@ -1,4 +1,53 @@
+# --- environment ---
 .env
-.app/*
-./nextjs-material-kit/*
-./site-dev/*
+.env.*
+!.env-changeme
+
+# --- secrets / local bootstrap ---
+tmp/*
+.tmp/*
+!tmp/.gitkeep
+
+# --- generic runtime / logs ---
+*.log
+*.log.*
+*.pid
+*.tmp
+*.bak
+*.swp
+.DS_Store
+
+# --- IDE ---
+.vscode/
+.idea/
+
+# --- auth / generated sensitive files ---
+swag/config/nginx/.htpasswd
+swag/config/keys/cert.crt
+swag/config/keys/cert.key
+
+# --- letsencrypt runtime state ---
+swag/config/etc/letsencrypt/
+swag/config/log/
+swag/config/fail2ban/fail2ban.sqlite3
+
+# --- observability runtime data ---
+grafana/data/
+grafana/grafana/data/
+grafana/loki/data/
+grafana/prometheus/data/
+grafana/tempo/data/
+
+loki/data/
+prometheus/data/
+tempo/data/
+
+# --- service runtime data ---
+filebrowser/*
+!filebrowser/.gitkeep
+
+keycloak/data/
+portainer/data/
+
+# --- optional local runtime dirs if present ---
+grafana/provisioning/alerting/.state/

@@ -1,0 +1,350 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+//////////////////////////////
+// LOKI: destination
+//////////////////////////////
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+//////////////////////////////
+// DOCKER DISCOVERY
+//////////////////////////////
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+//////////////////////////////
+// LOGS: relabel docker targets
+//////////////////////////////
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container"
+    regex         = "/(.*)"
+    replacement   = "$1"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    target_label  = "image"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_obs_stack"]
+    target_label  = "stack"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_obs_domain"]
+    target_label  = "domain"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_obs_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_obs_role"]
+    target_label  = "role"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_obs_env"]
+    target_label  = "env"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "docker"
+  }
+}
+
+//////////////////////////////
+// LOGS: collect docker logs
+//////////////////////////////
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.docker.receiver]
+}
+
+//////////////////////////////
+// LOGS: process pipeline
+//////////////////////////////
+
+loki.process "docker" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.static_labels {
+    values = {
+      host   = "homeserver-01",
+      source = "docker",
+    }
+  }
+
+  stage.regex {
+    expression = "(?i)(?:level|lvl|severity)=(?P<level>[a-z]+)"
+  }
+
+  stage.match {
+    selector = "{service=~\"swag|oauth2-proxy|keycloak|keycloak-postgresql\"}"
+
+    stage.static_labels {
+      values = {
+        critical = "true",
+      }
+    }
+  }
+
+  stage.labels {
+    values = {
+      job             = "",
+      container       = "",
+      compose_project = "",
+      compose_service = "",
+      image           = "",
+      stack           = "",
+      domain          = "",
+      service         = "",
+      role            = "",
+      env             = "",
+      host            = "",
+      source          = "",
+      critical        = "",
+      level           = "",
+    }
+  }
+}
+
+//////////////////////////////
+// PROMETHEUS SCRAPES
+//////////////////////////////
+
+prometheus.exporter.self "alloy_self" {}
+
+discovery.relabel "prometheus_targets" {
+  targets = [
+    {
+      __address__ = "grafana:3000",
+      job         = "grafana",
+      service     = "grafana",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "observability-ui",
+      env         = "prod",
+    },
+    {
+      __address__ = "prometheus:9090",
+      job         = "prometheus",
+      service     = "prometheus",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "metrics",
+      env         = "prod",
+    },
+    {
+      __address__ = "alertmanager:9093",
+      job         = "alertmanager",
+      service     = "alertmanager",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "alerting",
+      env         = "prod",
+    },
+    {
+      __address__ = "keycloak:9000",
+      job         = "keycloak",
+      service     = "keycloak",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "iam",
+      env         = "prod",
+    },
+    {
+      __address__ = "node-exporter:9100",
+      job         = "node-exporter",
+      service     = "node-exporter",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "host-metrics",
+      env         = "prod",
+    },
+    {
+      __address__ = "cadvisor:8080",
+      job         = "cadvisor",
+      service     = "cadvisor",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "container-metrics",
+      env         = "prod",
+    },
+    {
+      __address__ = "alloy:12345",
+      job         = "alloy",
+      service     = "alloy",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "collector",
+      env         = "prod",
+    },
+    {
+      __address__ = "loki:3100",
+      job         = "loki",
+      service     = "loki",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "logs",
+      env         = "prod",
+    },
+    {
+      __address__ = "tempo:3200",
+      job         = "tempo",
+      service     = "tempo",
+      stack       = "zone-proxy",
+      domain      = "admin",
+      role        = "tracing",
+      env         = "prod",
+    },
+  ]
+
+  rule {
+    source_labels = ["job"]
+    target_label  = "job"
+  }
+
+  rule {
+    source_labels = ["service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["stack"]
+    target_label  = "stack"
+  }
+
+  rule {
+    source_labels = ["domain"]
+    target_label  = "domain"
+  }
+
+  rule {
+    source_labels = ["role"]
+    target_label  = "role"
+  }
+
+  rule {
+    source_labels = ["env"]
+    target_label  = "env"
+  }
+}
+
+prometheus.scrape "infra" {
+  targets    = discovery.relabel.prometheus_targets.output
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.scrape "alloy_self" {
+  targets    = prometheus.exporter.self.alloy_self.targets
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+//////////////////////////////
+// OTLP RECEIVER -> ATTRIBUTES -> SERVICEGRAPH + TEMPO
+//////////////////////////////
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.attributes.traces_enrich.input]
+  }
+}
+
+otelcol.processor.attributes "traces_enrich" {
+  action {
+    key    = "deployment.environment"
+    action = "upsert"
+    value  = "prod"
+  }
+
+  action {
+    key    = "host.name"
+    action = "upsert"
+    value  = "homeserver-01"
+  }
+
+  action {
+    key    = "service.namespace"
+    action = "upsert"
+    value  = "zone-proxy"
+  }
+
+  output {
+    traces = [
+      otelcol.connector.servicegraph.default.input,
+      otelcol.processor.batch.default.input,
+    ]
+  }
+}
+
+otelcol.connector.servicegraph "default" {
+  dimensions = ["http.method", "http.status_code"]
+
+  output {
+    metrics = [otelcol.exporter.prometheus.servicegraph.input]
+  }
+}
+
+otelcol.exporter.prometheus "servicegraph" {
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+}
+
+otelcol.processor.batch "default" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

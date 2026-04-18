@@ -1,0 +1,122 @@
+---
+# Homepage configuration
+# See https://fontawesome.com/search for icons options
+
+title: "Admin welcome page"
+subtitle: "Elabs internal services dashboard"
+# documentTitle: "Welcome" # Customize the browser tab text
+
+# Optional: image logo in /assets
+# logo: "assets/logo.png"
+
+# Alternatively a Font Awesome icon can be provided:
+icon: "fa-solid fa-user-gear"
+
+header: true # Set to false to hide the header
+
+footer: '<p>Created with <span class="has-text-danger">❤️</span> with <a href="https://bulma.io/">bulma</a>, <a href="https://vuejs.org/">vuejs</a> & <a href="https://fontawesome.com/">font awesome</a> // Fork me on <a href="https://github.com/bastienwirtz/homer"><i class="fab fa-github-alt"></i></a></p>' # set false if you want to hide it.
+# footer: false
+
+columns: 3 # "auto" or number (must be a factor of 12: 1, 2, 3, 4, 6, 12)
+
+connectivityCheck: true # whether you want to display a message when the apps are not accessible anymore (VPN disconnected for example).
+                        # You should set it to true when using an authentication proxy, it also reloads the page when a redirection is detected when checking connectivity.
+
+# Optional: Proxy / hosting option
+# Useful if your smart cards need cookies or auth headers
+# proxy:
+#   useCredentials: false
+#   headers:
+#     X-Example-Header: "value"
+
+# Set the default layout and color scheme
+defaults:
+  layout: columns # Either 'columns', or 'list'
+  colorTheme: light # One of 'auto', 'light', or 'dark'
+
+# Optional theming
+theme: default # 'default' or one of the themes available in Homer
+
+# Optional navbar
+# links: [] # Allows for navbar (dark mode, layout, and search) without any links
+links:
+  - name: "Elasticlabs GitHub"
+    icon: "fab fa-github"
+    url: "https://github.com/elasticlabs"
+    target: "_blank" # optional html tag target attribute
+
+  - name: "JetPunk"
+    icon: "fas fa-fish"
+    url: "https://www.jetpunk.com/"
+    target: "_blank"
+
+  # This can link to a second Homer page
+  #- name: "Second Page"
+  #  icon: "fas fa-file-alt"
+  #  url: "#page2"
+
+# Services
+# First level array represents a group.
+services:
+  - name: "Admin"
+    icon: "fas fa-shield-alt"
+    items:
+      - name: "Keycloak"
+        icon: "fa-solid fa-id-card"
+        subtitle: "IAM / SSO"
+        url: "https://auth.elasticlabs.co"
+
+      # Basic bookmark version
+      - name: "Portainer"
+        icon: "fa-brands fa-docker"
+        subtitle: "Container management"
+        url: "https://admin.elasticlabs.co/portainer/"
+
+      # Smart card version for Portainer
+      # Displays container counts (running/dead/misc), version, and online status from your Portainer instance.
+      # Requirements: Portainer version 1.11 or later
+      # API Key: Generate an access token in Portainer UI.
+      # WARNING: any API key present in config.yml is exposed by Homer if the dashboard is publicly reachable.
+      #
+      # - name: "Portainer"
+      #   type: "Portainer"
+      #   icon: "fa-brands fa-docker"
+      #   url: "https://admin.elasticlabs.co/portainer/"
+      #   apikey: "<---insert-api-key-here--->"
+      #   environments: # optional: specific environments to check
+      #     - "raspberry"
+      #     - "local"
+
+      - name: "Grafana"
+        icon: "fa-solid fa-chart-line"
+        subtitle: "Observability"
+        url: "https://admin.elasticlabs.co/grafana/"
+
+      # Prometheus smart card
+      # Note: if you add a subtitle here, it hides dynamic info displayed by the integration
+      - name: "Prometheus"
+        type: "Prometheus"
+        icon: "fa-solid fa-fire"
+        url: "https://admin.elasticlabs.co/prometheus/"
+
+      # Alertmanager does not have a native Homer smart card in the official list,
+      # so use it as a standard service link
+      - name: "Alertmanager"
+        icon: "fa-solid fa-bell"
+        subtitle: "Alert routing & silences"
+        url: "https://admin.elasticlabs.co/alertmanager/"
+
+      - name: "cAdvisor"
+        icon: "fa-solid fa-microchip"
+        subtitle: "Container metrics UI"
+        url: "https://admin.elasticlabs.co/cadvisor/"
+
+      - name: "Files"
+        icon: "fa-solid fa-folder-open"
+        subtitle: "Named volumes browser"
+        url: "https://admin.elasticlabs.co/data/"
+
+      - name: "Dozzle (logs)"
+        icon: "fa-solid fa-scroll"
+        subtitle: "Container logs UI"
+        url: "https://admin.elasticlabs.co/logs/"

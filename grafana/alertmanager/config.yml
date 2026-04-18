@@ -1,0 +1,65 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'email-notifications'
+
+# TODO : configure GMail SMTP server
+receivers:
+- name: 'email-notifications'
+  email_configs:
+  - to: 'your-email@example.com'
+    from: 'alertmanager@example.com'
+    smarthost: smtp.example.com:587
+    auth_username: 'your-username'
+    auth_password: 'your-password'
+
+# 
+# Implementing Team-Based Alert Routing for Efficient Incident Response
+# Unlike basic setups, you can route alerts to different teams based on service and severity:
+#route:
+#  # Default receiver
+#  receiver: 'operations-team'
+#  group_by: ['alertname', 'severity']
+#  group_wait: 30s
+#  group_interval: 5m
+#  repeat_interval: 4h
+#  
+#  # Specific routing rules
+#  routes:
+#  - match:
+#      severity: critical
+#    receiver: 'pager-duty'
+#    repeat_interval: 1h
+#    continue: true
+#    
+#  - match_re:
+#      service: database|redis|elasticsearch
+#    receiver: 'database-team'
+#    
+#  - match_re:
+#      service: frontend|api
+#    receiver: 'application-team'#
+#
+#receivers:
+#- name: 'operations-team'
+#  email_configs:
+#  - to: 'ops@example.com'
+#    
+#- name: 'pager-duty'
+#  pagerduty_configs:
+#  - service_key: 'your-pagerduty-key'
+#    
+#- name: 'database-team'
+#  slack_configs:
+#  - api_url: 'https://hooks.slack.com/services/YOUR_KEY'
+#    channel: '#db-alerts'
+#    
+#- name: 'application-team'
+#  slack_configs:
+#  - api_url: 'https://hooks.slack.com/services/YOUR_KEY'
+#    channel: '#app-alerts'

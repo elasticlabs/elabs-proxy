@@ -1,0 +1,229 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "title": "Reverse Proxy Correlation",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-service Log Rate",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate({stack=\"$stack\", service=~\"swag|oauth2-proxy\"}[1m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Status Clues",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"swag\"} |= \" 500 \" [5m]))",
+          "legendFormat": "swag 500",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"swag\"} |= \" 502 \" [5m]))",
+          "legendFormat": "swag 502",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"oauth2-proxy\"} |= \" 400 \" [5m]))",
+          "legendFormat": "oauth2-proxy 400",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"oauth2-proxy\"} |= \" 401 \" [5m]))",
+          "legendFormat": "oauth2-proxy 401",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "logs",
+      "title": "SWAG Errors",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{stack=\"$stack\", service=\"swag\"} |= \"error\" or {stack=\"$stack\", service=\"swag\"} |= \"unexpected status\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "type": "logs",
+      "title": "oauth2-proxy Errors",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{stack=\"$stack\", service=\"oauth2-proxy\"} |= \"error\" or {stack=\"$stack\", service=\"oauth2-proxy\"} |= \"invalid configuration\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "type": "text",
+      "title": "Header / Routing Debug Cheatsheet",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### What to compare\n- SWAG `auth request unexpected status`\n- oauth2-proxy `/oauth2/auth` return code\n- oauth2-proxy `/oauth2/start?...` redirect behavior\n- whether `/oauth2/auth` returns **401** and not **400**\n\n### Core queries\n```logql\n{stack=\"zone-proxy\", service=\"swag\"} |= \"auth request unexpected status\"\n```\n\n```logql\n{stack=\"zone-proxy\", service=\"oauth2-proxy\"} |= \"/oauth2/auth\"\n```\n\n```logql\n{stack=\"zone-proxy\", service=\"oauth2-proxy\"} |= \"/oauth2/start\"\n```\n"
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "nginx",
+    "oauth2-proxy",
+    "debug"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "stack",
+        "label": "Stack",
+        "type": "textbox",
+        "query": "zone-proxy",
+        "current": {
+          "selected": true,
+          "text": "zone-proxy",
+          "value": "zone-proxy"
+        },
+        "hide": 0
+      },
+      {
+        "name": "auth_services",
+        "label": "Auth services",
+        "type": "textbox",
+        "query": "swag|oauth2-proxy|keycloak",
+        "current": {
+          "selected": true,
+          "text": "swag|oauth2-proxy|keycloak",
+          "value": "swag|oauth2-proxy|keycloak"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Advanced SWAG ↔ oauth2-proxy Correlation",
+  "uid": "advanced-swag-oauth2-correlation",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,287 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "title": "OIDC Flow Overview",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Auth Logs Rate by Service",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate({stack=\"$stack\", service=~\"$auth_services\"}[1m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "OIDC HTTP Status Patterns",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"oauth2-proxy\"} |= \" 200 \" [5m]))",
+          "legendFormat": "oauth2-proxy 200",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"oauth2-proxy\"} |= \" 302 \" [5m]))",
+          "legendFormat": "oauth2-proxy 302",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"oauth2-proxy\"} |= \" 400 \" [5m]))",
+          "legendFormat": "oauth2-proxy 400",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"oauth2-proxy\"} |= \" 401 \" [5m]))",
+          "legendFormat": "oauth2-proxy 401",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(count_over_time({stack=\"$stack\", service=\"swag\"} |= \"auth request unexpected status\" [5m]))",
+          "legendFormat": "swag auth_request unexpected",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Flow Steps",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "SWAG auth_request",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{stack=\"$stack\", service=\"swag\"} |= \"auth request\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "type": "logs",
+      "title": "oauth2-proxy start / callback / auth",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{stack=\"$stack\", service=\"oauth2-proxy\"} |= \"/oauth2/\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Keycloak Login / Broker Events",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{stack=\"$stack\", service=\"keycloak\"} |= \"broker\" or {stack=\"$stack\", service=\"keycloak\"} |= \"LOGIN\" or {stack=\"$stack\", service=\"keycloak\"} |= \"ERROR\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Focused Queries",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "text",
+      "title": "Useful Loki Queries",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Copy/paste\n```logql\n{stack=\"zone-proxy\", service=\"swag\"} |= \"auth request\"\n```\n\n```logql\n{stack=\"zone-proxy\", service=\"oauth2-proxy\"} |= \"/oauth2/start\"\n```\n\n```logql\n{stack=\"zone-proxy\", service=\"oauth2-proxy\"} |= \"/oauth2/auth\"\n```\n\n```logql\n{stack=\"zone-proxy\", service=\"keycloak\"} |= \"broker\"\n```\n"
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "oidc",
+    "auth",
+    "debug"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "stack",
+        "label": "Stack",
+        "type": "textbox",
+        "query": "zone-proxy",
+        "current": {
+          "selected": true,
+          "text": "zone-proxy",
+          "value": "zone-proxy"
+        },
+        "hide": 0
+      },
+      {
+        "name": "auth_services",
+        "label": "Auth services",
+        "type": "textbox",
+        "query": "swag|oauth2-proxy|keycloak",
+        "current": {
+          "selected": true,
+          "text": "swag|oauth2-proxy|keycloak",
+          "value": "swag|oauth2-proxy|keycloak"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Advanced Auth / OIDC Debug",
+  "uid": "advanced-auth-oidc-debug",
+  "version": 1,
+  "weekStart": ""
+}

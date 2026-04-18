@@ -1,0 +1,65 @@
+groups:
+- name: service_alerts
+  rules:
+  - alert: TargetDown
+    expr: up{job=~"grafana|prometheus|alertmanager|keycloak|node-exporter|cadvisor|alloy|loki|tempo"} == 0
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Prometheus target down ({{ $labels.job }})"
+      description: "Target {{ $labels.job }} is down"
+
+  - alert: HostHighLoad
+    expr: node:load1_per_cpu:ratio > 1.5
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High host load"
+      description: "Load average per CPU is above 1.5"
+
+  - alert: AlloyDown
+    expr: up{job="alloy"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Alloy is down"
+      description: "Alloy is unavailable, logs, metrics, and trace ingestion may be impacted"
+
+  - alert: KeycloakDown
+    expr: up{job="keycloak"} == 0
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Keycloak is down"
+      description: "Keycloak metrics endpoint is unreachable"
+
+  - alert: LokiDown
+    expr: up{job="loki"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Loki is down"
+      description: "Loki is unavailable"
+
+  - alert: TempoDown
+    expr: up{job="tempo"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Tempo is down"
+      description: "Tempo is unavailable"
+
+  - alert: ContainerMissing
+    expr: time() - container:last_seen:timestamp > 120
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container missing from cAdvisor ({{ $labels.name }})"
+      description: "Container {{ $labels.name }} has not been seen for more than 2 minutes"

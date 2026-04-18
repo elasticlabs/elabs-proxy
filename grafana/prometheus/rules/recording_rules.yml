@@ -1,0 +1,41 @@
+groups:
+- name: recording_rules
+  interval: 1m
+  rules:
+  - record: node:cpu_usage:avg5m
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+  - record: node:memory_usage:percent
+    expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100
+
+  - record: node:disk_usage:percent
+    expr: 100 * (1 - node_filesystem_avail_bytes{fstype=~"ext4|xfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs"})
+
+  - record: node:load1_per_cpu:ratio
+    expr: node_load1 / count by(instance) (node_cpu_seconds_total{mode="idle"})
+
+  - record: container:cpu_usage:avg5m
+    expr: sum by(name) (rate(container_cpu_usage_seconds_total{name!=""}[5m])) * 100
+
+  - record: container:memory_working_set:bytes
+    expr: sum by(name) (container_memory_working_set_bytes{name!=""})
+
+  - record: container:memory_usage:bytes
+    expr: sum by(name) (container_memory_usage_bytes{name!=""})
+
+  - record: container:restarts:15m
+    expr: changes(container_start_time_seconds{name!=""}[15m])
+
+  - record: container:last_seen:timestamp
+    expr: max by(name) (container_last_seen{name!=""})
+
+  - record: container:cpu_throttling:ratio5m
+    expr: sum by(name) (rate(container_cpu_cfs_throttled_periods_total{name!=""}[5m]))
+          /
+          sum by(name) (rate(container_cpu_cfs_periods_total{name!=""}[5m]))
+
+  - record: service:up:bool
+    expr: max by(job, service, stack, domain, role, env) (up)
+
+  - record: service:targets_down:count
+    expr: count by(job, service, stack, domain, role, env) (up == 0)

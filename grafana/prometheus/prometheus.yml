@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself changes slowly, scrape less frequently
+  - job_name: 'prometheus'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # System metrics change frequently, scrape more often
+  - job_name: 'node-exporter'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Container metrics are also volatile
+  - job_name: 'cadvisor'
+    metrics_path: /cadvisor/metrics
+    static_configs:
+      - targets:
+          - cadvisor:8080
+
+  - job_name: alloy
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["alloy:12345"]
+
+  - job_name: loki
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: tempo
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["tempo:3200"]
+
+  - job_name: keycloak
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["keycloak:9000"]

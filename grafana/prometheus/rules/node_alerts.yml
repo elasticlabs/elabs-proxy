@@ -1,0 +1,38 @@
+groups:
+- name: node_alerts
+  rules:
+  - alert: HighCPULoad
+    expr: node:cpu_usage:avg5m > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU load (instance {{ $labels.instance }})"
+      description: "CPU load is above 80%"
+
+  - alert: HighMemoryLoad
+    expr: node:memory_usage:percent > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory load (instance {{ $labels.instance }})"
+      description: "Memory load is above 80%"
+
+  - alert: HighDiskUsage
+    expr: node:disk_usage:percent > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High disk usage (instance {{ $labels.instance }})"
+      description: "Disk usage is above 85%"
+
+  - alert: UnusualMemoryGrowth
+    expr: deriv(node_memory_MemAvailable_bytes[30m]) < -10 * 1024 * 1024
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Unusual memory consumption rate (instance {{ $labels.instance }})"
+      description: "Available memory is shrinking by more than 10 MB/min"

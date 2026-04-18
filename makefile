@@ -1,99 +1,242 @@
-# Set default no argument goal to help
-.DEFAULT_GOAL := help
+SHELL := /bin/bash
 
-# Ensure that errors don't hide inside pipes
-SHELL         = /bin/bash
-.SHELLFLAGS   = -o pipefail -c
+ifneq (,$(wildcard ./.env))
+include .env
+export
+endif
 
-# Setup variables
-PROJECT_NAME?=$(shell cat .env | grep -v ^\# | grep COMPOSE_PROJECT_NAME | sed 's/.*=//')
-APP_BASEURL?=$(shell cat .env | grep VIRTUAL_HOST | sed 's/.*=//')
-APP_BASEDOMAIN?=$(shell cat .env | grep VIRTUAL_HOST | sed 's/.*=// | sed 's/.*\.//')
-APPS_NETWORK?=$(shell cat .env | grep -v ^\# | grep APPS_NETWORK | sed 's/.*=//')
-ADMIN_NETWORK?=$(shell cat .env | grep -v ^\# | grep ADMIN_NETWORK | sed 's/.*=//')
+BASE_DOMAIN ?= $(shell grep BASE_DOMAIN .env | cut -d '=' -f2)
 
-# Every command is a PHONY, to avoid file naming confliction -> strengh comes from good habits!
-.PHONY: help
+AUTH_DOMAIN ?= auth.$(BASE_DOMAIN)
+ADMIN_DOMAIN ?= admin.$(BASE_DOMAIN)
+LABS_DOMAIN ?= labs.$(BASE_DOMAIN)
+
+NETWORKS := $(REVPROXY_APPS_NETWORK) $(SWAG_NETWORK)
+
+.PHONY: help cp-env docker-check networks init up down restart ps logs pull build config clean secrets-bootstrap
+
 help:
-	@echo "=================================================================================="
-	@echo "        Secure HTTPS reverse proxy based on SWAG, Portainer and Authelia  "
-	@echo "       >> https://github.com/elasticlabs/https-nginx-proxy-docker-compose"
-	@echo " "
-	@echo " Hints for developers:"
-	@echo "  make build            # Checks that everythings's OK then builds the stack"
-	@echo "  make up               # With working proxy, brings up the software stack"
-	@echo "  make update           # Update the whole stack"
-	@echo "  make authelia-hash    # Create a hashed password for Authelia users"
-	@echo "  make hard-cleanup     # /!\ Remove images, containers, networks, volumes & data"
-	@echo "=================================================================================="
-
-.PHONY: build
-build:
-	# Network creation if not done yet
-	@bash ./.utils/message.sh info "[INFO] Create ${APPS_NETWORK} and ${ADMIN_NETWORK} networks if they don't already exist"
-	docker network inspect ${APPS_NETWORK} >/dev/null 2>&1 || docker network create --driver bridge ${APPS_NETWORK}
-	docker network inspect ${ADMIN_NETWORK} >/dev/null 2>&1 || docker network create --driver bridge ${ADMIN_NETWORK}
-	#
-	@bash ./.utils/message.sh info "Set Homepage base URL"
-	sed -i "s/changeme/labs.${APP_BASEURL}/g" ./config/homepage/settings.yaml
-	sed -i "s/changeme/labs.${APP_BASEURL}/g" ./config/homepage/services.yaml
-	#
-	@bash ./.utils/message.sh info "Set Authelia base URL"
-	sed -i "s/redirecturl/auth.${APP_BASEURL}/g" ./config/authelia/config/configuration.yml
-	sed -i "s/changeme/${APP_BASEURL}/g" ./config/authelia/config/configuration.yml
-	sed -i "s/changeme/auth.${APP_BASEURL}/g" ./config/swag/config/nginx/snippets/authelia-authrequest.conf
-	sed -i "s/authchangeme/auth.${APP_BASEURL}/g" ./config/homepage/services.yaml
-	# Setting dashboard explicit URL
-	sed -i "s/changeme/dash.${APP_BASEURL}/g" ./config/swag/config/nginx/active-confs/dashboard.subdomain.conf
-	#
-	# Build the stack
-	@bash ./.utils/message.sh info "[INFO] Building the Secure proxy"
-	docker compose -f docker-compose.yml build
-	@bash ./.utils/message.sh info "[INFO] Build OK. Use make up to activate the automated proxy."
-
-.PHONY: up
-up: build
-	@bash ./.utils/message.sh info "[INFO] Bringing up the secure proxy"
-	docker compose up -d --remove-orphans
-	@make urls
-
-.PHONY: authelia-hash
-authelia-hash:
-	@bash ./.utils/message.sh info "[INFO] Hash a password in Argon2 for Authelia"
-	read -s -p "Password: " PASSWORD; \
-	docker run authelia/authelia:latest authelia crypto hash generate argon2 --password $$PASSWORD	 
 	@echo ""
-	@bash ./.utils/message.sh info "[INFO] You can now use it for any user in "
-	@bash ./.utils/message.sh link "./config/authelia/config/users_database.yaml"
-
-.PHONY: hard-cleanup
-hard-cleanup:
-	@bash ./.utils/message.sh info "[INFO] Bringing down the HTTPS automated proxy"
-	docker compose -f docker-compose.yml down --remove-orphans
-	# Delete all hosted persistent data available in volumes
-	@bash ./.utils/message.sh info "[INFO] Cleaning up static volumes"
-	#docker volume rm -f $(PROJECT_NAME)_html
-	@bash ./.utils/message.sh info "[INFO] The Letsencrypt CERT volumes are not deleted to avoid rate limiting"
-	@bash ./.utils/message.sh info "[INFO] Cleaning up containers & images"
-	docker system prune -a
-
-.PHONY: urls
-urls:
-	@bash ./.utils/message.sh headline "[INFO] You may now access your project at the following URL:"
-	@bash ./.utils/message.sh link "Homepage: https://${APP_BASEURL}/"
-	@bash ./.utils/message.sh link "Portainer docker admin GUI: https://${APP_BASEURL}/portainer"
-	@bash ./.utils/message.sh link "File browser : https://${APP_BASEURL}/data"
-	@bash ./.utils/message.sh link "SWAG dashboard: https://dash.${APP_BASEURL}/"
+	@echo "Bootstrap"
+	@echo "  make cp-env            -> create .env from .env.example if missing"
+	@echo "  make secrets-bootstrap -> generate and inject secrets into .env where CHANGE_ME is present"
+	@echo "  make init              -> validate docker + create networks + directories"
+	@echo "  make htpasswd          -> flush and recreate .htpasswd with a single user"
+	@echo "  make keycloak-realm    -> generate Keycloak realm file from template"
+	@echo ""
+	@echo "Lifecycle"
+	@echo "  make build             -> build local images"
+	@echo "  make up                -> start the stack"
+	@echo "  make down              -> stop the stack"
+	@echo "  make restart           -> restart the stack"
+	@echo "  make ps                -> list containers"
+	@echo "  make pull              -> pull base images"
+	@echo "  make config            -> validate compose config"
+	@echo ""
+	@echo "Derived domains"
+	@echo "  AUTH_DOMAIN=$(AUTH_DOMAIN)"
+	@echo "  ADMIN_DOMAIN=$(ADMIN_DOMAIN)"
+	@echo "  LABS_DOMAIN=$(LABS_DOMAIN)"
 	@echo ""
 
-.PHONY: pull
-pull: 
-	docker compose pull
+cp-env:
+	@[ -f .env ] || cp .env-changeme .env
+	@echo ".env ready."
 
-.PHONY: update
-update: pull up wait
-	docker image prune
+env-check:
+	@test -f .env || { echo ".env missing. Run: make cp-env"; exit 1; }
+	@grep -q '^BASE_DOMAIN=' .env || { echo "BASE_DOMAIN missing"; exit 1; }
+	@grep -q '^ADMIN_EMAIL=' .env || { echo "ADMIN_EMAIL missing"; exit 1; }
+	@grep -q '^REVPROXY_APPS_NETWORK=' .env || { echo "REVPROXY_APPS_NETWORK missing"; exit 1; }
+	@grep -q '^SWAG_NETWORK=' .env || { echo "SWAG_NETWORK missing"; exit 1; }
+	@grep -q '^KEYCLOAK_DB_PASSWORD=' .env || { echo "KEYCLOAK_DB_PASSWORD missing"; exit 1; }
+	@grep -q '^KEYCLOAK_ADMIN_PASSWORD=' .env || { echo "KEYCLOAK_ADMIN_PASSWORD missing"; exit 1; }
+	@grep -q '^OAUTH2_PROXY_CLIENT_SECRET=' .env || { echo "OAUTH2_PROXY_CLIENT_SECRET missing"; exit 1; }
+	@grep -q '^OAUTH2_PROXY_COOKIE_SECRET=' .env || { echo "OAUTH2_PROXY_COOKIE_SECRET missing"; exit 1; }
+	@grep -q '^GRAFANA_ADMIN_USER=' .env || { echo "GRAFANA_ADMIN_USER missing"; exit 1; }
+	@grep -q '^GRAFANA_ADMIN_PASSWORD=' .env || { echo "GRAFANA_ADMIN_PASSWORD missing"; exit 1; }
+	@echo ".env OK."
 
-.PHONY: wait
-wait: 
-	sleep 5
+secrets-bootstrap:
+	@test -f .env || { echo ".env missing. Run: make cp-env"; exit 1; }
+	@mkdir -p .tmp; \
+	DB_PASS="$$(openssl rand -base64 24 | tr -d '\n')"; \
+	KC_ADMIN_PASS="$$(openssl rand -base64 24 | tr -d '\n')"; \
+	OAUTH_CLIENT_SECRET="$$(openssl rand -base64 32 | tr -d '\n')"; \
+	OAUTH_COOKIE_SECRET="$$(openssl rand 32 | base64 | tr -d '\n' | tr '+/' '-_' | tr -d '=')"; \
+	GRAFANA_ADMIN_PASS="$$(openssl rand -base64 24 | tr -d '\n')"; \
+	changed=0; \
+	set_secret() { \
+		key="$$1"; value="$$2"; \
+		if grep -Eq "^$${key}=CHANGE_ME$$" .env; then \
+			sed -i "s|^$${key}=CHANGE_ME$$|$${key}=$${value}|" .env; \
+			changed=1; \
+		fi; \
+	}; \
+	set_secret KEYCLOAK_DB_PASSWORD "$$DB_PASS"; \
+	set_secret KEYCLOAK_ADMIN_PASSWORD "$$KC_ADMIN_PASS"; \
+	set_secret OAUTH2_PROXY_CLIENT_SECRET "$$OAUTH_CLIENT_SECRET"; \
+	set_secret OAUTH2_PROXY_COOKIE_SECRET "$$OAUTH_COOKIE_SECRET"; \
+	set_secret GRAFANA_ADMIN_PASSWORD "$$GRAFANA_ADMIN_PASS"; \
+	{ \
+		printf '%s\n' '# elabs-revproxy bootstrap secrets'; \
+		printf '\n'; \
+		printf '%s\n' '## KeepassXC entries to create'; \
+		printf '\n'; \
+		printf '%s\n' '### keycloak-db'; \
+		printf '%s\n' "- username: $(KEYCLOAK_DB_USER)"; \
+		printf '%s\n' "- password: $$DB_PASS"; \
+		printf '\n'; \
+		printf '%s\n' '### keycloak-admin'; \
+		printf '%s\n' "- username: $(KEYCLOAK_ADMIN_USER)"; \
+		printf '%s\n' "- password: $$KC_ADMIN_PASS"; \
+		printf '\n'; \
+		printf '%s\n' '### oauth2-proxy-client'; \
+		printf '%s\n' "- username: $(OAUTH2_PROXY_CLIENT_ID)"; \
+		printf '%s\n' "- password: $$OAUTH_CLIENT_SECRET"; \
+		printf '\n'; \
+		printf '%s\n' '### oauth2-proxy-cookie'; \
+		printf '%s\n' '- username: cookie-secret'; \
+		printf '%s\n' "- password: $$OAUTH_COOKIE_SECRET"; \
+		printf '\n'; \
+		printf '%s\n' '### grafana-admin'; \
+		printf '%s\n' "- username: $(GRAFANA_ADMIN_USER)"; \
+		printf '%s\n' "- password: $$GRAFANA_ADMIN_PASS"; \
+		printf '\n'; \
+		printf '%s\n' '## Injected .env values'; \
+		printf '\n'; \
+		printf '%s\n' "KEYCLOAK_DB_PASSWORD=$$DB_PASS"; \
+		printf '%s\n' "KEYCLOAK_ADMIN_PASSWORD=$$KC_ADMIN_PASS"; \
+		printf '%s\n' "OAUTH2_PROXY_CLIENT_SECRET=$$OAUTH_CLIENT_SECRET"; \
+		printf '%s\n' "OAUTH2_PROXY_COOKIE_SECRET=$$OAUTH_COOKIE_SECRET"; \
+		printf '%s\n' "GRAFANA_ADMIN_PASSWORD=$$GRAFANA_ADMIN_PASS"; \
+	} > .tmp/secrets.bootstrap.md; \
+	echo ""; \
+	echo "Bootstrap secrets written to .tmp/secrets.bootstrap.md"; \
+	if [ $$changed -eq 1 ]; then \
+		echo "CHANGE_ME values were replaced directly in .env"; \
+	else \
+		echo "No CHANGE_ME placeholder found for auto-injection; .env left unchanged."; \
+	fi
+
+docker-check:
+	@command -v docker >/dev/null 2>&1 || { echo "docker missing"; exit 1; }
+	@docker info >/dev/null 2>&1 || { echo "docker daemon unavailable"; exit 1; }
+	@docker compose version >/dev/null 2>&1 || { echo "docker compose plugin missing"; exit 1; }
+	@echo "Docker OK."
+
+networks: env-check
+	@for net in $(NETWORKS); do \
+		if ! docker network inspect $$net >/dev/null 2>&1; then \
+			echo "Creating network $$net"; \
+			docker network create $$net >/dev/null; \
+		else \
+			echo "Network already exists: $$net"; \
+		fi; \
+	done
+
+init: docker-check env-check networks keycloak-realm
+	@echo "Detected BASE_DOMAIN=$(BASE_DOMAIN)"
+	@read -r -p "Use this domain? [Y/n] " confirm; \
+	if [[ "$$confirm" =~ ^[Nn]$$ ]]; then \
+		read -r -p "Enter new BASE_DOMAIN: " new_domain; \
+		test -n "$$new_domain" || { echo "No domain provided"; exit 1; }; \
+		sed -i "s|^BASE_DOMAIN=.*$$|BASE_DOMAIN=$$new_domain|" .env; \
+		BASE_DOMAIN="$$new_domain"; \
+	else \
+		BASE_DOMAIN="$(BASE_DOMAIN)"; \
+	fi; \
+	echo "Using domain: $$BASE_DOMAIN"; \
+	find swag/config/nginx -type f -name "*.conf" -exec sed -i "s|__BASE_DOMAIN__|$$BASE_DOMAIN|g" {} +
+	@echo "Init OK."
+
+build: init
+	@docker compose build
+
+up: init
+	@docker compose up -d
+	@echo ""
+	@echo "Available URLs"
+	@echo "  Admin       : https://$(ADMIN_DOMAIN)/"
+	@echo "  Portainer   : https://$(ADMIN_DOMAIN)/portainer/"
+	@echo "  Grafana     : https://$(ADMIN_DOMAIN)/grafana/"
+	@echo "  Alertmanager: https://$(ADMIN_DOMAIN)/alertmanager/"
+	@echo "  Prometheus  : https://$(ADMIN_DOMAIN)/prometheus/"
+	@echo "  cAdvisor    : https://$(ADMIN_DOMAIN)/cadvisor/"
+	@echo "  Files       : https://$(ADMIN_DOMAIN)/data/"
+	@echo "  Logs        : https://$(ADMIN_DOMAIN)/logs/"
+	@echo "  Labs        : https://$(LABS_DOMAIN)/"
+	@echo "  IAM URLs"
+	@echo "  Keycloak    : https://$(AUTH_DOMAIN)"
+
+
+down:
+	@docker compose down --remove-orphans
+
+restart:
+	@docker compose down
+	@docker compose up -d
+	@echo ""
+	@echo "Available URLs"
+	@echo "  Admin       : https://$(ADMIN_DOMAIN)/"
+	@echo "  Portainer   : https://$(ADMIN_DOMAIN)/portainer/"
+	@echo "  Grafana     : https://$(ADMIN_DOMAIN)/grafana/"
+	@echo "  Alertmanager: https://$(ADMIN_DOMAIN)/alertmanager/"
+	@echo "  Prometheus  : https://$(ADMIN_DOMAIN)/prometheus/"
+	@echo "  cAdvisor    : https://$(ADMIN_DOMAIN)/cadvisor/"
+	@echo "  Files       : https://$(ADMIN_DOMAIN)/data/"
+	@echo "  Logs        : https://$(ADMIN_DOMAIN)/logs/"
+	@echo "  Labs        : https://$(LABS_DOMAIN)/"
+	@echo "  IAM URLs"
+	@echo "  Keycloak    : https://$(AUTH_DOMAIN)"
+
+ps:
+	@docker compose ps
+
+pull:
+	@docker compose pull
+
+config: env-check
+	@docker compose config
+
+clean:
+	@echo "Stopping stack and removing Docker volumes..."
+	@docker compose down -v --remove-orphans
+	@echo "Clean complete. ./tmp and TLS certs preserved."
+
+.PHONY: keycloak-realm
+
+keycloak-realm: env-check
+	@mkdir -p keycloak/import
+	@echo "Generating Keycloak realm from template..."
+	@envsubst < keycloak/templates/elabs-realm.json.tpl > keycloak/import/elabs-realm.json
+	@echo "✔ keycloak/import/elabs-realm.json generated"
+
+htpasswd:
+	@docker compose ps --status running swag | grep -q swag || { \
+		echo "SWAG is not running."; \
+		echo "Start the stack first with: make up"; \
+		exit 1; \
+	}
+	@echo ""
+	@echo "WARNING: this will flush and recreate ./swag/config/nginx/.htpasswd"
+	@echo "with a single user."
+	@echo ""
+	@read -r -p "Continue? [y/N] " confirm; \
+	if [[ ! "$$confirm" =~ ^[Yy]$$ ]]; then \
+		echo "Aborted."; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	read -r -p "Enter the username to create: " user; \
+	if [ -z "$$user" ]; then \
+		echo "Username cannot be empty."; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "Recreating .htpasswd with user '$$user'..."; \
+	docker compose exec -it swag htpasswd -c /config/nginx/.htpasswd "$$user"
+	@echo "User '$$user' created in .htpasswd."
+	@echo "Reloading SWAG configuration..."
+	@docker compose exec -it swag nginx -s reload
+	@echo "Done."

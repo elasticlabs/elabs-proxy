@@ -1,0 +1,23 @@
+{
+  "title": "Platform Overview",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Service Health",
+      "targets": [
+        {
+          "expr": "avg_over_time(up{job=~\".*\"}[2m])"
+        }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Traffic",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m]))"
+        }
+      ]
+    }
+  ]
+}
