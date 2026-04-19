@@ -69,6 +69,27 @@ A **production-grade self-hosted platform stack** built around:
     - [🟢 Beginner (first deployment)](#-beginner-first-deployment)
     - [🟡 Intermediate (debug \& operate)](#-intermediate-debug--operate)
     - [🔴 Advanced (security \& production)](#-advanced-security--production)
+- [🔌 Connecting downstream client stacks](#-connecting-downstream-client-stacks)
+  - [Deployment model](#deployment-model)
+  - [Subdomain vs subfolder](#subdomain-vs-subfolder)
+    - [Prefer a subdomain when](#prefer-a-subdomain-when)
+    - [Prefer a subfolder when](#prefer-a-subfolder-when)
+  - [Entry point principle](#entry-point-principle)
+    - [Simple application](#simple-application)
+    - [Composite application](#composite-application)
+    - [Default recommendation](#default-recommendation)
+  - [Shared Docker network](#shared-docker-network)
+  - [Observability contract for downstream stacks](#observability-contract-for-downstream-stacks)
+    - [Logs](#logs)
+    - [Labels and semantics](#labels-and-semantics)
+    - [Metrics](#metrics)
+    - [Traces](#traces)
+  - [Security integration](#security-integration)
+    - [Phase 1 style (at this point, do you need it anyway? ^^)](#phase-1-style-at-this-point-do-you-need-it-anyway-)
+    - [Phase 2 style](#phase-2-style)
+  - [Recommended repository layout for client stacks](#recommended-repository-layout-for-client-stacks)
+  - [Minimal bootstrap checklist](#minimal-bootstrap-checklist)
+  - [Recommended onboarding flow](#recommended-onboarding-flow)
 
 ---
 
@@ -1098,3 +1119,267 @@ The documentation is organized by concern and maturity level.
 1. OIDC & Security Rollout
 2. OIDC Setup Guide
 3. Apply OIDC progressively
+
+---
+
+# 🔌 Connecting downstream client stacks
+
+This platform is designed to host and expose **downstream client stacks** such as:
+
+- a hobbyist media platform (e.g. owncloud)
+- a geospatial platform
+- internal APIs
+- customer-specific tools
+
+The reverse proxy and observability stack stay centralized here. Each downstream stack remains an **independent Git repository**, usually cloned outside this repository, for example in:
+
+```text
+../appli/<client-stack>
+```
+
+---
+
+## Deployment model
+
+A downstream stack should follow these principles:
+
+- it stays **autonomous** in its own repository
+- it joins the shared Docker network used by the reverse proxy
+- it exposes **one clear HTTP entry point**
+- it emits logs to stdout/stderr
+- if possible, it exposes metrics and optionally traces
+
+This repository remains the **platform layer**:
+
+- SWAG / TLS / routing
+- Keycloak / oauth2-proxy / OIDC
+- shared observability
+- dashboarding and operations
+
+The downstream stack remains the **application layer**:
+
+- business services
+- its own compose file
+- its own application secrets
+- its own delivery lifecycle
+
+---
+
+## Subdomain vs subfolder
+
+Use the following rule of thumb.
+
+### Prefer a subdomain when
+
+- the stack is a real application
+- it has its own identity
+- it may evolve independently
+- it uses its own auth/session logic
+- it may later be moved elsewhere
+
+Examples:
+
+- `nextcloud.YOUR_DOMAIN`
+- `geo.YOUR_DOMAIN`
+- `api.YOUR_DOMAIN`
+
+### Prefer a subfolder when
+
+- the component is an admin or support tool
+- it is tightly coupled to the platform
+- it works correctly behind a base path
+- it does not need a dedicated public identity
+
+Examples:
+
+- `/grafana/`
+- `/prometheus/`
+- `/logs/`
+
+For most downstream client applications, **subdomain is the default choice**.
+
+---
+
+## Entry point principle
+
+Every downstream stack should have **one primary HTTP entry point**.
+
+### Simple application
+
+If the stack exposes a single web service, SWAG should proxy directly to that service.
+
+Example:
+
+- one API container on port `8080`
+- one frontend container on port `3000`
+
+In this case, no internal reverse proxy is needed.
+
+### Composite application
+
+If the stack combines multiple public-facing services behind a single external URL, an internal reverse proxy can make sense.
+
+Examples:
+
+- frontend + API + admin interface
+- geospatial UI + tileserver + API
+
+In that case, the downstream repository may expose a single internal Nginx or Caddy entry point, and SWAG proxies only to that container.
+
+### Default recommendation
+
+> Do **not** add an internal reverse proxy unless the application really needs one.
+
+This keeps debugging much easier.
+
+---
+
+## Shared Docker network
+
+A downstream stack that must be exposed by SWAG should join the shared external network:
+
+```yaml
+networks:
+  revproxy_apps:
+    external: true
+```
+
+Example service:
+
+```yaml
+services:
+  app:
+    image: your-image
+    restart: unless-stopped
+    networks:
+      - revproxy_apps
+    expose:
+      - "8080"
+
+networks:
+  revproxy_apps:
+    external: true
+```
+
+This allows SWAG to route traffic to the application without embedding the application stack inside this repository.
+
+---
+
+## Observability contract for downstream stacks
+
+To integrate cleanly with the platform, a downstream stack should follow this minimum contract.
+
+### Logs
+
+- write logs to stdout/stderr
+- avoid file-only logging inside containers
+- prefer structured or semi-structured logs when possible
+
+### Labels and semantics
+
+At minimum, align on these dimensions:
+
+- `stack`
+- `service`
+- `env`
+- `level`
+
+Recommended values:
+
+- `stack`: name of the downstream stack, for example `tennisme`
+- `service`: short functional service name, for example `api`, `frontend`, `worker`
+- `env`: `dev`, `staging`, or `prod`
+- `level`: `info`, `warn`, `error`
+
+### Metrics
+
+If possible, expose a Prometheus endpoint such as:
+
+```text
+/metrics
+```
+
+### Traces
+
+If tracing is planned, emit OTLP to the platform collector as early as possible.
+
+---
+
+## Security integration
+
+A downstream stack can be integrated progressively.
+
+### Phase 1 style (at this point, do you need it anyway? ^^)
+
+- exposed by SWAG
+- optional temporary basic auth
+- no OIDC yet
+
+### Phase 2 style
+
+- protected by oauth2-proxy
+- authentication delegated to Keycloak
+- access controlled through groups
+
+The canary pattern used for the platform should also be reused for client stacks:
+
+> validate authentication on one route first, then expand protection gradually.
+
+---
+
+## Recommended repository layout for client stacks
+
+A downstream stack repository can stay very small at first:
+
+```text
+client-stack/
+├── docker-compose.yml
+├── .env.example
+├── README.md
+└── app/
+```
+
+Optional later:
+
+```text
+client-stack/
+├── docker-compose.yml
+├── docker-compose.override.yml
+├── .env.example
+├── docs/
+├── nginx/
+├── monitoring/
+└── app/
+```
+
+---
+
+## Minimal bootstrap checklist
+
+Before connecting a downstream stack to this platform, confirm:
+
+- the repository exists and starts on its own
+- the main HTTP service is identified
+- the internal port is known
+- the stack joins `revproxy_apps`
+- stdout logs are available
+- metrics availability is known
+- subdomain vs subfolder is decided
+- OIDC requirement is decided
+
+---
+
+## Recommended onboarding flow
+
+1. Clone the client repository into `../appli/<client-stack>`
+2. Start it locally with its own compose file
+3. Connect it to `revproxy_apps`
+4. Add the SWAG route
+5. Validate plain HTTP routing
+6. Validate logs in the platform
+7. Add metrics and dashboards if available
+8. Add OIDC protection when the route is stable
+
+This keeps the rollout progressive and debuggable.
+
+---
