@@ -10,7 +10,7 @@ A **production-grade self-hosted platform stack** built around:
 - Admin tooling (Grafana, Portainer, Filebrowser)
 
 <p>
-  <img src="https://raw.githubusercontent.com/elasticlabs/tennis.me-infra/main/docs/Architecture.png" alt="Elabs secure HTTPS proxy" height="400px">
+  <img src="https://raw.githubusercontent.com/elasticlabs/elabs-proxy/main/docs/Architecture.png" alt="Elabs secure HTTPS proxy" height="400px">
 </p>
 
 > 💡 Designed to be **reproducible, modular, and progressively secured**
