@@ -51,3 +51,12 @@ portainer/data/
 
 # --- optional local runtime dirs if present ---
 grafana/provisioning/alerting/.state/
+
+# --- client stack local reverse proxy configs ---
+swag/config/nginx/client-stacks/*
+!swag/config/nginx/client-stacks/.gitkeep
+!swag/config/nginx/client-stacks/*.example
+
+# --- local client subdomain configs ---
+swag/config/nginx/site-confs/client-*.subdomain.conf
+!swag/config/nginx/site-confs/client-stack.subdomain.conf.example
