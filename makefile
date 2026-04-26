@@ -149,7 +149,7 @@ init: docker-check env-check networks keycloak-realm
 	echo "Using domain: $$BASE_DOMAIN"; \
 	\
 	echo "Creating .conf from .sample if missing..."; \
-	find swag/config/nginx -type f -name "*.conf.sample" | while read sample; do \
+	find swag/config/nginx/site-confs -type f -name "*.conf.sample" | while read sample; do \
 		target="$${sample%.sample}"; \
 		if [ ! -f "$$target" ]; then \
 			echo " -> creating $$target"; \
