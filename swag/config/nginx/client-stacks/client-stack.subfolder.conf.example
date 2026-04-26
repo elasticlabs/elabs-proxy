@@ -12,7 +12,7 @@
 #
 # location ^~ /my-client/ {
       # -> Hardening phase 2 : OIDC
-#     include /config/nginx/custom/admin-auth-oidc.conf;
+      # include /config/nginx/custom/admin-auth-oidc.conf;
 #     include /config/nginx/proxy.conf;
 #     include /config/nginx/resolver.conf;
 #
