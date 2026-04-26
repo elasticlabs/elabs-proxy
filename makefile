@@ -147,8 +147,20 @@ init: docker-check env-check networks keycloak-realm
 		BASE_DOMAIN="$(BASE_DOMAIN)"; \
 	fi; \
 	echo "Using domain: $$BASE_DOMAIN"; \
-	find swag/config/nginx -type f -name "*.conf" -exec sed -i "s|__BASE_DOMAIN__|$$BASE_DOMAIN|g" {} +
-	@echo "Init OK."
+	\
+	echo "Creating .conf from .sample if missing..."; \
+	find swag/config/nginx -type f -name "*.conf.sample" | while read sample; do \
+		target="$${sample%.sample}"; \
+		if [ ! -f "$$target" ]; then \
+			echo " -> creating $$target"; \
+			cp "$$sample" "$$target"; \
+		fi; \
+	done; \
+	\
+	echo "Applying BASE_DOMAIN to .conf files..."; \
+	find swag/config/nginx -type f -name "*.conf" -exec sed -i "s|__BASE_DOMAIN__|$$BASE_DOMAIN|g" {} +; \
+	\
+	echo "Init OK."
 
 build: init
 	@docker compose build
