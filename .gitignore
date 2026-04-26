@@ -60,3 +60,10 @@ swag/config/nginx/client-stacks/*
 # --- local client subdomain configs ---
 swag/config/nginx/site-confs/client-*.subdomain.conf
 !swag/config/nginx/site-confs/client-stack.subdomain.conf.example
+
+# --- local SWAG site confs ---
+swag/config/nginx/site-confs/admin.subdomain.conf
+swag/config/nginx/site-confs/labs.subdomain.conf
+
+# Keep versioned examples
+!swag/config/nginx/site-confs/*.sample

@@ -193,9 +193,6 @@ restart:
 ps:
 	@docker compose ps
 
-pull:
-	@docker compose pull
-
 config: env-check
 	@docker compose config
 
@@ -240,3 +237,11 @@ htpasswd:
 	@echo "Reloading SWAG configuration..."
 	@docker compose exec -it swag nginx -s reload
 	@echo "Done."
+
+backup-site-confs:
+	@mkdir -p .tmp/backups/site-confs
+	@cp -av swag/config/nginx/site-confs/admin.subdomain.conf .tmp/backups/site-confs/admin.subdomain.conf.$$(date +%Y%m%d-%H%M%S).bak 2>/dev/null || true
+	@cp -av swag/config/nginx/site-confs/labs.subdomain.conf .tmp/backups/site-confs/labs.subdomain.conf.$$(date +%Y%m%d-%H%M%S).bak 2>/dev/null || true
+
+pull: backup-site-confs
+	git pull
