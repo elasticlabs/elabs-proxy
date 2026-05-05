@@ -1094,9 +1094,15 @@ The documentation is organized by concern and maturity level.
 
 ## 📊 Observability Usage
 
-- [Grafana Debug Queries](./docs/Grafana%20debug%20queries.md) :contentReference[oaicite:4]{index=4}
-- [Dashboard Semantics](./docs/Dashboard%20semantics.md) :contentReference[oaicite:5]{index=5}
-- [Observability signals](./docs/observability-signals.md) :contentReference[oaicite:6]{index=5}
+- [Grafana Debug Queries](./docs/Grafana%20debug%20queries.md)
+- [Dashboard Semantics](./docs/Dashboard%20semantics.md)
+- [Observability signals](./docs/observability-signals.md)
+
+## 🔌 Downstream Stacks
+
+- [Adding a downstream stack](./docs/adding-a-downstream-stack.md) — step-by-step onboarding guide
+- [Stack registry](./stacks/REGISTRY.md) — list of all connected stacks
+- [Stack templates](./stacks/templates/) — compose fragment, nginx confs, prometheus target
 
 ---
 
@@ -1120,266 +1126,108 @@ The documentation is organized by concern and maturity level.
 2. OIDC Setup Guide
 3. Apply OIDC progressively
 
+### 🟣 Adding application stacks
+
+1. [Adding a downstream stack](./docs/adding-a-downstream-stack.md)
+2. `make stack-add STACK=myapp PORT=8080`
+3. `make stack-check STACK=myapp`
+
 ---
 
 # 🔌 Connecting downstream client stacks
 
-This platform is designed to host and expose **downstream client stacks** such as:
+| ▲ [Top](#top) |
+| --- |
 
-- a hobbyist media platform (e.g. owncloud)
-- a geospatial platform
-- internal APIs
-- customer-specific tools
+This platform is designed to host and expose **downstream application stacks** — each living in its own Git repository, autonomous, and connected to this shared layer for TLS, routing, auth, and observability.
 
-The reverse proxy and observability stack stay centralized here. Each downstream stack remains an **independent Git repository**, usually cloned outside this repository, for example in:
+👉 **Full guide: [docs/adding-a-downstream-stack.md](./docs/adding-a-downstream-stack.md)**
 
-```text
-../appli/<client-stack>
+---
+
+## Quickstart
+
+```bash
+# Scaffold nginx conf + prometheus target in one command
+make stack-add STACK=myapp PORT=8080 MODE=subdomain
+
+# Check connection status at any time
+make stack-check STACK=myapp
+
+# View all registered stacks
+make stack-list
 ```
+
+`make stack-add` scaffolds the nginx site conf and a Prometheus target file, then prints a step-by-step next-steps checklist.
 
 ---
 
 ## Deployment model
 
-A downstream stack should follow these principles:
+Each downstream stack is **autonomous**: it has its own `docker-compose.yml`, its own secrets, its own delivery lifecycle. It joins the shared `revproxy_apps` Docker network so SWAG can route to it.
 
-- it stays **autonomous** in its own repository
-- it joins the shared Docker network used by the reverse proxy
-- it exposes **one clear HTTP entry point**
-- it emits logs to stdout/stderr
-- if possible, it exposes metrics and optionally traces
-
-This repository remains the **platform layer**:
-
-- SWAG / TLS / routing
-- Keycloak / oauth2-proxy / OIDC
-- shared observability
-- dashboarding and operations
-
-The downstream stack remains the **application layer**:
-
-- business services
-- its own compose file
-- its own application secrets
-- its own delivery lifecycle
+```
+Platform layer (this repo)          Application layer (downstream repo)
+─────────────────────────────       ────────────────────────────────────
+SWAG / TLS / routing            ←── expose port on revproxy_apps network
+Keycloak / oauth2-proxy / OIDC  ←── optional: protect routes via OIDC
+Shared observability            ←── obs.* Docker labels + optional /metrics
+Homer dashboard                 ←── manual entry in homer/config.yml
+```
 
 ---
 
 ## Subdomain vs subfolder
 
-Use the following rule of thumb.
+| Use subdomain when | Use subfolder when |
+|---|---|
+| Real standalone application | Admin/support tool |
+| Own identity or domain | Works correctly behind a base path |
+| May move or scale independently | Tightly coupled to the platform |
 
-### Prefer a subdomain when
-
-- the stack is a real application
-- it has its own identity
-- it may evolve independently
-- it uses its own auth/session logic
-- it may later be moved elsewhere
-
-Examples:
-
-- `nextcloud.YOUR_DOMAIN`
-- `geo.YOUR_DOMAIN`
-- `api.YOUR_DOMAIN`
-
-### Prefer a subfolder when
-
-- the component is an admin or support tool
-- it is tightly coupled to the platform
-- it works correctly behind a base path
-- it does not need a dedicated public identity
-
-Examples:
-
-- `/grafana/`
-- `/prometheus/`
-- `/logs/`
-
-For most downstream client applications, **subdomain is the default choice**.
+Default: **subdomain** for all downstream application stacks.
 
 ---
 
-## Entry point principle
+## Observability contract
 
-Every downstream stack should have **one primary HTTP entry point**.
+All downstream stacks should follow this minimum contract to integrate with the platform's Loki/Prometheus/Tempo pipeline.
 
-### Simple application
-
-If the stack exposes a single web service, SWAG should proxy directly to that service.
-
-Example:
-
-- one API container on port `8080`
-- one frontend container on port `3000`
-
-In this case, no internal reverse proxy is needed.
-
-### Composite application
-
-If the stack combines multiple public-facing services behind a single external URL, an internal reverse proxy can make sense.
-
-Examples:
-
-- frontend + API + admin interface
-- geospatial UI + tileserver + API
-
-In that case, the downstream repository may expose a single internal Nginx or Caddy entry point, and SWAG proxies only to that container.
-
-### Default recommendation
-
-> Do **not** add an internal reverse proxy unless the application really needs one.
-
-This keeps debugging much easier.
-
----
-
-## Shared Docker network
-
-A downstream stack that must be exposed by SWAG should join the shared external network:
+Add these Docker labels to each service container:
 
 ```yaml
-networks:
-  revproxy_apps:
-    external: true
+labels:
+  obs.stack: myapp        # logical stack name
+  obs.service: api        # service within the stack
+  obs.domain: labs        # labs | admin
+  obs.role: api           # api | frontend | worker | db | ...
+  obs.env: prod
 ```
 
-Example service:
+Logs go to stdout/stderr — Alloy discovers them automatically via Docker labels.
 
-```yaml
-services:
-  app:
-    image: your-image
-    restart: unless-stopped
-    networks:
-      - revproxy_apps
-    expose:
-      - "8080"
+Metrics: drop a `.yml` file in `grafana/prometheus/targets/downstream/` — Prometheus picks it up within 60 seconds, no restart needed.
 
-networks:
-  revproxy_apps:
-    external: true
-```
-
-This allows SWAG to route traffic to the application without embedding the application stack inside this repository.
+Traces: point your OTEL SDK at `alloy:4317` (gRPC) or `alloy:4318` (HTTP).
 
 ---
 
-## Observability contract for downstream stacks
+## Registered stacks
 
-To integrate cleanly with the platform, a downstream stack should follow this minimum contract.
-
-### Logs
-
-- write logs to stdout/stderr
-- avoid file-only logging inside containers
-- prefer structured or semi-structured logs when possible
-
-### Labels and semantics
-
-At minimum, align on these dimensions:
-
-- `stack`
-- `service`
-- `env`
-- `level`
-
-Recommended values:
-
-- `stack`: name of the downstream stack, for example `tennisme`
-- `service`: short functional service name, for example `api`, `frontend`, `worker`
-- `env`: `dev`, `staging`, or `prod`
-- `level`: `info`, `warn`, `error`
-
-### Metrics
-
-If possible, expose a Prometheus endpoint such as:
-
-```text
-/metrics
-```
-
-### Traces
-
-If tracing is planned, emit OTLP to the platform collector as early as possible.
+See [stacks/REGISTRY.md](./stacks/REGISTRY.md) for the list of all connected stacks.
 
 ---
 
-## Security integration
+## Reference files
 
-A downstream stack can be integrated progressively.
-
-### Phase 1 style (at this point, do you need it anyway? ^^)
-
-- exposed by SWAG
-- optional temporary basic auth
-- no OIDC yet
-
-### Phase 2 style
-
-- protected by oauth2-proxy
-- authentication delegated to Keycloak
-- access controlled through groups
-
-The canary pattern used for the platform should also be reused for client stacks:
-
-> validate authentication on one route first, then expand protection gradually.
-
----
-
-## Recommended repository layout for client stacks
-
-A downstream stack repository can stay very small at first:
-
-```text
-client-stack/
-├── docker-compose.yml
-├── .env.example
-├── README.md
-└── app/
-```
-
-Optional later:
-
-```text
-client-stack/
-├── docker-compose.yml
-├── docker-compose.override.yml
-├── .env.example
-├── docs/
-├── nginx/
-├── monitoring/
-└── app/
-```
-
----
-
-## Minimal bootstrap checklist
-
-Before connecting a downstream stack to this platform, confirm:
-
-- the repository exists and starts on its own
-- the main HTTP service is identified
-- the internal port is known
-- the stack joins `revproxy_apps`
-- stdout logs are available
-- metrics availability is known
-- subdomain vs subfolder is decided
-- OIDC requirement is decided
-
----
-
-## Recommended onboarding flow
-
-1. Clone the client repository into `../appli/<client-stack>`
-2. Start it locally with its own compose file
-3. Connect it to `revproxy_apps`
-4. Add the SWAG route
-5. Validate plain HTTP routing
-6. Validate logs in the platform
-7. Add metrics and dashboards if available
-8. Add OIDC protection when the route is stable
-
-This keeps the rollout progressive and debuggable.
+| File | Purpose |
+|------|---------|
+| `stacks/templates/docker-compose.fragment.yml` | Annotated compose fragment to copy |
+| `stacks/templates/nginx-subdomain.conf.tpl` | Used by `make stack-add MODE=subdomain` |
+| `stacks/templates/nginx-subfolder.conf.tpl` | Used by `make stack-add MODE=subfolder` |
+| `stacks/templates/prometheus-target.yml.tpl` | Used by `make stack-add` for metrics |
+| `grafana/prometheus/targets/downstream/` | Drop `.yml` files here to register metrics |
+| `stacks/REGISTRY.md` | Registry of all connected stacks |
+| `docs/adding-a-downstream-stack.md` | Full step-by-step onboarding guide |
 
 ---

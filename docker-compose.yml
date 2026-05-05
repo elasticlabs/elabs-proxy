@@ -135,6 +135,7 @@ services:
     volumes:
       - ./grafana/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./grafana/prometheus/rules:/etc/prometheus/rules:ro
+      - ./grafana/prometheus/targets:/etc/prometheus/targets:ro
       - prometheus_data:/prometheus
     labels:
       <<: *common-observability-labels

@@ -57,3 +57,15 @@ scrape_configs:
     scrape_interval: 30s
     static_configs:
       - targets: ["keycloak:9000"]
+
+  # ── Downstream stacks ──────────────────────────────────────────────────────
+  # Drop a <stack-name>.yml file in grafana/prometheus/targets/downstream/
+  # to register scrape targets without editing this file.
+  # See grafana/prometheus/targets/downstream/example-stack.yml.example
+  # or run: make stack-add STACK=myapp PORT=8080
+  - job_name: 'downstream'
+    scrape_interval: 30s
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets/downstream/*.yml'
+        refresh_interval: 60s

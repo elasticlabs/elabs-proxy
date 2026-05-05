@@ -52,14 +52,27 @@ portainer/data/
 # --- optional local runtime dirs if present ---
 grafana/provisioning/alerting/.state/
 
+# --- homer: generated from homer/config.yml.tpl by `make init` ---
+homer/config.yml
+
 # --- client stack local reverse proxy configs ---
 swag/config/nginx/client-stacks/*
 !swag/config/nginx/client-stacks/.gitkeep
 !swag/config/nginx/client-stacks/*.example
+!swag/config/nginx/client-stacks/*.tpl
 
 # --- local client subdomain configs ---
-!swag/config/nginx/site-confs/client-stack.subdomain.conf.example
 swag/config/nginx/site-confs/*.subdomain.conf
 
-# Keep versioned examples
+# Keep versioned templates and examples
 !swag/config/nginx/site-confs/*.sample
+!swag/config/nginx/site-confs/*.example
+
+# --- downstream stack prometheus targets (local, per-deployment) ---
+grafana/prometheus/targets/downstream/*.yml
+!grafana/prometheus/targets/downstream/*.example
+!grafana/prometheus/targets/downstream/.gitkeep
+
+# --- stacks registry and templates are always tracked ---
+!stacks/REGISTRY.md
+!stacks/templates/

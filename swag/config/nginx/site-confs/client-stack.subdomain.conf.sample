@@ -1,32 +1,34 @@
-# swag/config/nginx/site-confs/client-stack.subdomain.conf.example
+# swag/config/nginx/site-confs/client-stack.subdomain.conf.sample
 #
-# Example client stack exposed as a dedicated subdomain.
-# Copy this file to:
+# Reference example — client stack exposed as a dedicated subdomain.
+#
+# For automated scaffolding use:
+#   make stack-add STACK=my-client PORT=8080 MODE=subdomain
+#
+# Or copy manually to:
 #   swag/config/nginx/site-confs/my-client.subdomain.conf
 #
-# Then update:
-#   - server_name
-#   - upstream service name
-#   - upstream port
+# Then update server_name, upstream service name, and upstream port.
+# __BASE_DOMAIN__ is automatically substituted by `make init`.
 #
 # server {
 #     listen 443 ssl;
 #     listen [::]:443 ssl;
 #
 #     server_name my-client.__BASE_DOMAIN__;
-      # Local / downstream client stacks
-      include /config/nginx/client-stacks/*.conf;
-
-      # -> Hardening step 2 (see docs for more information)
-      #location @oauth2_start {
-      #    return 302 /oauth2/start?rd=$scheme://$host$request_uri;
-      #}
 #
 #     include /config/nginx/ssl.conf;
 #
+#     # Hardening step 2 — uncomment to enable OIDC on this subdomain.
+#     # Validate on the canary first (see docs/adding-a-downstream-stack.md).
+#     #location @oauth2_start {
+#     #    return 302 /oauth2/start?rd=$scheme://$host$request_uri;
+#     #}
+#
 #     location / {
-#          -> Hardening step 2 (see docs for more information)
-#         include /config/nginx/custom/admin-auth-oidc.conf;
+#         # Hardening step 2 — uncomment to enable OIDC:
+#         # include /config/nginx/custom/admin-auth-oidc.conf;
+#
 #         include /config/nginx/proxy.conf;
 #         include /config/nginx/resolver.conf;
 #

@@ -1,0 +1,50 @@
+# docker-compose.fragment.yml
+#
+# Minimal fragment for connecting a downstream service to elabs-proxy.
+# Copy the relevant sections into your own docker-compose.yml.
+#
+# Key requirements:
+#   1. Join the revproxy_apps network (shared with SWAG)
+#   2. Use `expose` (not `ports`) — SWAG handles public ingress
+#   3. Add obs.* labels so Alloy auto-labels logs and metrics
+#
+# After adding, run on the platform host:
+#   make stack-check STACK=<your-stack-name>
+
+services:
+  # ── Replace 'myapp' with your actual service name ──────────────────────────
+  myapp:
+    image: your-image:tag
+    container_name: ${COMPOSE_PROJECT_NAME}_myapp
+    restart: unless-stopped
+    expose:
+      - "8080"       # HTTP port proxied by SWAG — do NOT use `ports`
+    # Optional: if the service exposes a /metrics endpoint
+    # expose:
+    #   - "8080"     # app port
+    #   - "9090"     # metrics port (add to prometheus target file)
+    environment:
+      # Your app env vars here
+      SOME_VAR: value
+    labels:
+      # Observability labels — required for log enrichment in Loki/Grafana
+      obs.stack: myapp          # logical stack name (matches stacks/REGISTRY.md)
+      obs.service: myapp        # service name within the stack
+      obs.domain: labs          # subdomain area: labs | admin
+      obs.role: api             # functional role: api | frontend | worker | db
+      obs.env: prod             # environment: prod | staging | dev
+    networks:
+      - revproxy_apps
+    # Optional: mount volumes, add healthcheck, etc.
+    # healthcheck:
+    #   test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
+
+# ── Network declaration — mandatory at file bottom ─────────────────────────
+networks:
+  revproxy_apps:
+    external: true
+    # Name must match REVPROXY_APPS_NETWORK in elabs-proxy/.env
+    # Default: revproxy_apps

@@ -1,0 +1,42 @@
+# grafana/prometheus/targets/downstream/example-stack.yml.example
+#
+# Template for registering a downstream stack's metrics in Prometheus.
+#
+# Usage:
+#   Copy this file to grafana/prometheus/targets/downstream/<your-stack>.yml
+#   (remove the .example suffix — .yml files are gitignored, per deployment)
+#
+# Or use the automated scaffolding:
+#   make stack-add STACK=myapp PORT=8080
+#
+# Prometheus will auto-discover this file via file_sd_configs (refresh: 60s).
+# No restart needed — just drop the .yml file and wait one refresh cycle.
+#
+# Required labels (align with platform observability contract):
+#   job      → unique job name for this stack (usually the stack name)
+#   stack    → logical stack name (obs.stack Docker label)
+#   service  → service name within the stack
+#   env      → prod | staging | dev
+#
+# Optional but recommended:
+#   domain   → subdomain or area (e.g. labs, admin, geo)
+#   role     → functional role (e.g. api, frontend, worker)
+
+- targets:
+    - myapp:9090          # <container-name>:<metrics-port>
+  labels:
+    job: myapp
+    stack: myapp
+    service: myapp
+    domain: labs
+    role: api
+    env: prod
+
+# Multiple targets from the same stack:
+# - targets:
+#     - myapp-api:9090
+#     - myapp-worker:9091
+#   labels:
+#     job: myapp
+#     stack: myapp
+#     env: prod

@@ -13,14 +13,22 @@ LABS_DOMAIN ?= labs.$(BASE_DOMAIN)
 
 NETWORKS := $(REVPROXY_APPS_NETWORK) $(SWAG_NETWORK)
 
-.PHONY: help cp-env docker-check networks init up down restart ps logs pull build config clean secrets-bootstrap
+.PHONY: help cp-env docker-check networks init up down restart ps logs pull build config clean secrets-bootstrap stack-add stack-check stack-list
+
+# ── Downstream stack helpers ───────────────────────────────────────────────
+# STACK : container / service name (also used as subdomain or subfolder slug)
+# PORT  : HTTP port exposed by the service
+# MODE  : subdomain (default) | subfolder
+STACK ?=
+PORT  ?=
+MODE  ?= subdomain
 
 help:
 	@echo ""
 	@echo "Bootstrap"
 	@echo "  make cp-env            -> create .env from .env.example if missing"
 	@echo "  make secrets-bootstrap -> generate and inject secrets into .env where CHANGE_ME is present"
-	@echo "  make init              -> validate docker + create networks + directories"
+	@echo "  make init              -> validate docker + create networks + generate configs"
 	@echo "  make htpasswd          -> flush and recreate .htpasswd with a single user"
 	@echo "  make keycloak-realm    -> generate Keycloak realm file from template"
 	@echo ""
@@ -32,6 +40,13 @@ help:
 	@echo "  make ps                -> list containers"
 	@echo "  make pull              -> pull base images"
 	@echo "  make config            -> validate compose config"
+	@echo ""
+	@echo "Downstream stacks"
+	@echo "  make stack-add   STACK=myapp PORT=8080 [MODE=subdomain|subfolder]"
+	@echo "                         -> scaffold nginx conf + prometheus target for a new stack"
+	@echo "  make stack-check STACK=myapp"
+	@echo "                         -> verify network, nginx conf, and prometheus target"
+	@echo "  make stack-list        -> list registered downstream stacks (stacks/REGISTRY.md)"
 	@echo ""
 	@echo "Derived domains"
 	@echo "  AUTH_DOMAIN=$(AUTH_DOMAIN)"
@@ -160,6 +175,17 @@ init: docker-check env-check networks keycloak-realm
 	echo "Applying BASE_DOMAIN to .conf files..."; \
 	find swag/config/nginx -type f -name "*.conf" -exec sed -i "s|__BASE_DOMAIN__|$$BASE_DOMAIN|g" {} +; \
 	\
+	echo "Generating homer/config.yml from template..."; \
+	if [ ! -f homer/config.yml ]; then \
+		sed "s|__BASE_DOMAIN__|$$BASE_DOMAIN|g" homer/config.yml.tpl > homer/config.yml; \
+		echo " -> homer/config.yml created"; \
+	else \
+		echo " -> homer/config.yml already exists (skipped)"; \
+	fi; \
+	\
+	echo "Ensuring prometheus downstream targets directory..."; \
+	mkdir -p grafana/prometheus/targets/downstream; \
+	\
 	echo "Init OK."
 
 build: init
@@ -257,3 +283,191 @@ backup-site-confs:
 
 pull: backup-site-confs
 	git pull
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Downstream stack helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+stack-add: env-check
+	@test -n "$(STACK)" || { \
+		echo ""; \
+		echo "Usage: make stack-add STACK=<name> PORT=<port> [MODE=subdomain|subfolder]"; \
+		echo ""; \
+		echo "  STACK  container / service name (also used as subdomain or path slug)"; \
+		echo "  PORT   HTTP port the container listens on"; \
+		echo "  MODE   subdomain (default) or subfolder"; \
+		echo ""; \
+		exit 1; \
+	}
+	@test -n "$(PORT)" || { \
+		echo ""; \
+		echo "PORT is required."; \
+		echo "Usage: make stack-add STACK=$(STACK) PORT=<port> [MODE=subdomain|subfolder]"; \
+		echo ""; \
+		exit 1; \
+	}
+	@echo ""
+	@echo "=== Scaffolding downstream stack: $(STACK) (mode=$(MODE), port=$(PORT)) ==="
+	@echo ""
+	@\
+	DOMAIN="$(BASE_DOMAIN)"; \
+	\
+	if [ "$(MODE)" = "subfolder" ]; then \
+		nginx_tpl="stacks/templates/nginx-subfolder.conf.tpl"; \
+		nginx_dest="swag/config/nginx/client-stacks/$(STACK).conf"; \
+	else \
+		nginx_tpl="stacks/templates/nginx-subdomain.conf.tpl"; \
+		nginx_dest="swag/config/nginx/site-confs/$(STACK).subdomain.conf"; \
+	fi; \
+	\
+	if [ -f "$$nginx_dest" ]; then \
+		echo "⚠  $$nginx_dest already exists — skipping nginx conf"; \
+	else \
+		sed -e "s|__STACK__|$(STACK)|g" \
+		    -e "s|__BASE_DOMAIN__|$$DOMAIN|g" \
+		    -e "s|__PORT__|$(PORT)|g" \
+		    "$$nginx_tpl" > "$$nginx_dest"; \
+		echo "✔  Created: $$nginx_dest"; \
+	fi; \
+	\
+	mkdir -p grafana/prometheus/targets/downstream; \
+	prom_dest="grafana/prometheus/targets/downstream/$(STACK).yml"; \
+	if [ -f "$$prom_dest" ]; then \
+		echo "⚠  $$prom_dest already exists — skipping prometheus target"; \
+	else \
+		sed -e "s|__STACK__|$(STACK)|g" \
+		    -e "s|__BASE_DOMAIN__|$$DOMAIN|g" \
+		    -e "s|__PORT__|$(PORT)|g" \
+		    -e "s|__METRICS_PORT__|9090|g" \
+		    stacks/templates/prometheus-target.yml.tpl > "$$prom_dest"; \
+		echo "✔  Created: $$prom_dest (update __METRICS_PORT__ if needed)"; \
+	fi; \
+	\
+	echo ""; \
+	echo "─── Next steps ────────────────────────────────────────────────────────────"; \
+	echo ""; \
+	echo "1. In your downstream docker-compose.yml, connect the service:"; \
+	echo "   (see stacks/templates/docker-compose.fragment.yml for a full example)"; \
+	echo ""; \
+	echo "     networks:"; \
+	echo "       - revproxy_apps"; \
+	echo "     labels:"; \
+	echo "       obs.stack: $(STACK)"; \
+	echo "       obs.service: $(STACK)"; \
+	echo "       obs.domain: labs"; \
+	echo "       obs.role: <role>"; \
+	echo "       obs.env: prod"; \
+	echo ""; \
+	echo "     # at file bottom:"; \
+	echo "     networks:"; \
+	echo "       revproxy_apps:"; \
+	echo "         external: true"; \
+	echo ""; \
+	if [ "$(MODE)" = "subfolder" ]; then \
+		echo "2. Nginx: $$nginx_dest auto-included under labs.$$DOMAIN"; \
+	else \
+		echo "2. Nginx: review $$nginx_dest"; \
+		echo "   Add DNS A record: $(STACK).$$DOMAIN -> server IP"; \
+	fi; \
+	echo ""; \
+	echo "3. If your service exposes /metrics, update the port in:"; \
+	echo "   $$prom_dest"; \
+	echo "   (or delete it if no metrics endpoint)"; \
+	echo ""; \
+	echo "4. Add a Homer entry in homer/config.yml under the relevant group"; \
+	echo ""; \
+	echo "5. Register: edit stacks/REGISTRY.md"; \
+	echo ""; \
+	echo "6. Validate: make stack-check STACK=$(STACK)"; \
+	echo ""; \
+	echo "7. Reload SWAG:"; \
+	echo "   docker compose exec swag nginx -t && docker compose exec swag nginx -s reload"; \
+	echo ""
+
+stack-check: env-check
+	@test -n "$(STACK)" || { \
+		echo "Usage: make stack-check STACK=<name>"; \
+		exit 1; \
+	}
+	@echo ""
+	@echo "=== Checking downstream stack: $(STACK) ==="
+	@echo ""
+	@\
+	ok=1; \
+	\
+	echo "── Docker network ($(REVPROXY_APPS_NETWORK)) ──────────────────────────"; \
+	if docker network inspect $(REVPROXY_APPS_NETWORK) >/dev/null 2>&1; then \
+		containers=$$(docker network inspect $(REVPROXY_APPS_NETWORK) --format '{{range .Containers}}{{.Name}} {{end}}'); \
+		if echo "$$containers" | tr ' ' '\n' | grep -qi "$(STACK)"; then \
+			echo "✔  Container matching '$(STACK)' found on $(REVPROXY_APPS_NETWORK)"; \
+		else \
+			echo "✗  No container matching '$(STACK)' on $(REVPROXY_APPS_NETWORK)"; \
+			echo "   Running containers: $$containers"; \
+			ok=0; \
+		fi; \
+	else \
+		echo "✗  Network $(REVPROXY_APPS_NETWORK) not found"; \
+		ok=0; \
+	fi; \
+	echo ""; \
+	\
+	echo "── Nginx configuration ────────────────────────────────────────────────"; \
+	subdomain_conf="swag/config/nginx/site-confs/$(STACK).subdomain.conf"; \
+	subfolder_conf="swag/config/nginx/client-stacks/$(STACK).conf"; \
+	if [ -f "$$subdomain_conf" ]; then \
+		echo "✔  Subdomain conf: $$subdomain_conf"; \
+	elif [ -f "$$subfolder_conf" ]; then \
+		echo "✔  Subfolder conf: $$subfolder_conf"; \
+	else \
+		echo "✗  No nginx conf found (run: make stack-add STACK=$(STACK) PORT=<port>)"; \
+		ok=0; \
+	fi; \
+	echo ""; \
+	\
+	echo "── Prometheus target ──────────────────────────────────────────────────"; \
+	prom_target="grafana/prometheus/targets/downstream/$(STACK).yml"; \
+	if [ -f "$$prom_target" ]; then \
+		if grep -q "__METRICS_PORT__" "$$prom_target"; then \
+			echo "⚠  $$prom_target exists but __METRICS_PORT__ is not set yet"; \
+		else \
+			echo "✔  $$prom_target"; \
+		fi; \
+	else \
+		echo "–  No prometheus target (optional — only needed if service exposes /metrics)"; \
+	fi; \
+	echo ""; \
+	\
+	echo "── Homer dashboard ────────────────────────────────────────────────────"; \
+	if [ -f homer/config.yml ] && grep -q "$(STACK)" homer/config.yml; then \
+		echo "✔  Homer entry found"; \
+	else \
+		echo "–  No Homer entry yet (add manually to homer/config.yml)"; \
+	fi; \
+	echo ""; \
+	\
+	echo "── Registry ───────────────────────────────────────────────────────────"; \
+	if grep -q "$(STACK)" stacks/REGISTRY.md 2>/dev/null; then \
+		echo "✔  Registered in stacks/REGISTRY.md"; \
+	else \
+		echo "–  Not registered yet (add a row to stacks/REGISTRY.md)"; \
+	fi; \
+	echo ""; \
+	\
+	if [ "$$ok" -eq 1 ]; then \
+		echo "✅  Stack $(STACK) looks connected. Reload SWAG if you haven't yet:"; \
+		echo "    docker compose exec swag nginx -t && docker compose exec swag nginx -s reload"; \
+	else \
+		echo "❌  One or more checks failed — review the items above."; \
+	fi; \
+	echo ""
+
+stack-list:
+	@echo ""
+	@echo "=== Registered downstream stacks ==="
+	@echo ""
+	@if [ -f stacks/REGISTRY.md ]; then \
+		cat stacks/REGISTRY.md; \
+	else \
+		echo "(stacks/REGISTRY.md not found)"; \
+	fi
+	@echo ""
